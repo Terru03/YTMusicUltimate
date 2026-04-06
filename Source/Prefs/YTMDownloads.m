@@ -176,7 +176,7 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
     }
 
     if ([self currentMode] == YTMDownloadsModeAllSongs) {
-        NSDictionary *track = self.tracks[indexPath.row];
+        NSMutableDictionary *track = self.tracks[indexPath.row];
 
         UIContextualAction *shareAction = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleNormal title:@"" handler:^(__unused UIContextualAction *action, __unused UIView *sourceView, void (^completionHandler)(BOOL)) {
             [self activityControllerWithObjects:@[track[@"audioURL"]] sender:[self.tableView cellForRowAtIndexPath:indexPath]];
