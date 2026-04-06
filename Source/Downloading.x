@@ -171,6 +171,7 @@ static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *
     NSString *urlStr = playerResponse.playerData.streamingData.hlsManifestURL;
 
     FFMpegDownloader *ffmpeg = [[FFMpegDownloader alloc] init];
+    ffmpeg.suppressUserInterface = isBatchDownload;
     ffmpeg.tempName = playerVC.contentVideoID ?: [NSUUID UUID].UUIDString;
     ffmpeg.mediaName = [NSString stringWithFormat:@"%@ - %@", author, title];
     ffmpeg.duration = MAX(1, round(playerVC.currentVideoTotalMediaTime));

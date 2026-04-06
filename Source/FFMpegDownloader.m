@@ -20,9 +20,13 @@
         [self setActive];
     });
 
-    self.hud = [MBProgressHUD showHUDAddedTo:[UIApplication sharedApplication].keyWindow animated:YES];
-    self.hud.mode = MBProgressHUDModeAnnularDeterminate;
-    self.hud.label.text = LOC(@"DOWNLOADING");
+    if (!self.suppressUserInterface) {
+        self.hud = [MBProgressHUD showHUDAddedTo:[UIApplication sharedApplication].keyWindow animated:YES];
+        self.hud.mode = MBProgressHUDModeAnnularDeterminate;
+        self.hud.label.text = LOC(@"DOWNLOADING");
+    } else {
+        self.hud = nil;
+    }
 
     NSURL *documentsURL = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject];
     NSURL *destinationURL = [documentsURL URLByAppendingPathComponent:[NSString stringWithFormat:@"%@.m4a", self.tempName]];
@@ -43,32 +47,36 @@
                 BOOL isMoved = [[NSFileManager defaultManager] moveItemAtURL:destinationURL toURL:outputURL error:&moveError];
 
                 if (isMoved) {
-                    self.hud = [MBProgressHUD showHUDAddedTo:[UIApplication sharedApplication].keyWindow animated:YES];
-                    self.hud.mode = MBProgressHUDModeCustomView;
-                    self.hud.label.text = LOC(@"DONE");
-                    self.hud.label.numberOfLines = 0;
+                    if (!self.suppressUserInterface) {
+                        self.hud = [MBProgressHUD showHUDAddedTo:[UIApplication sharedApplication].keyWindow animated:YES];
+                        self.hud.mode = MBProgressHUDModeCustomView;
+                        self.hud.label.text = LOC(@"DONE");
+                        self.hud.label.numberOfLines = 0;
 
-                    UIImageView *checkmarkImageView = [[UIImageView alloc] initWithImage:[self imageWithSystemIconNamed:@"checkmark"]];
-                    checkmarkImageView.contentMode = UIViewContentModeScaleAspectFit;
-                    self.hud.customView = checkmarkImageView;
+                        UIImageView *checkmarkImageView = [[UIImageView alloc] initWithImage:[self imageWithSystemIconNamed:@"checkmark"]];
+                        checkmarkImageView.contentMode = UIViewContentModeScaleAspectFit;
+                        self.hud.customView = checkmarkImageView;
 
-                    [self.hud hideAnimated:YES afterDelay:3.0];
+                        [self.hud hideAnimated:YES afterDelay:3.0];
+                    }
 
                     if (self.completion) {
                         self.completion(YTMFFMpegDownloadResultSuccess);
                     }
                 } else {
-                    self.hud = [MBProgressHUD showHUDAddedTo:[UIApplication sharedApplication].keyWindow animated:YES];
-                    self.hud.mode = MBProgressHUDModeCustomView;
-                    self.hud.label.text = LOC(@"OOPS");
-                    self.hud.label.numberOfLines = 0;
+                    if (!self.suppressUserInterface) {
+                        self.hud = [MBProgressHUD showHUDAddedTo:[UIApplication sharedApplication].keyWindow animated:YES];
+                        self.hud.mode = MBProgressHUDModeCustomView;
+                        self.hud.label.text = LOC(@"OOPS");
+                        self.hud.label.numberOfLines = 0;
 
-                    UIImageView *checkmarkImageView = [[UIImageView alloc] initWithImage:[self imageWithSystemIconNamed:@"xmark"]];
-                    checkmarkImageView.contentMode = UIViewContentModeScaleAspectFit;
-                    self.hud.customView = checkmarkImageView;
+                        UIImageView *checkmarkImageView = [[UIImageView alloc] initWithImage:[self imageWithSystemIconNamed:@"xmark"]];
+                        checkmarkImageView.contentMode = UIViewContentModeScaleAspectFit;
+                        self.hud.customView = checkmarkImageView;
 
-                    [self.hud hideAnimated:YES afterDelay:3.0];
-                    [UIPasteboard generalPasteboard].string = [NSString stringWithFormat:@"File move failed: %@\n", moveError.localizedDescription ?: @"unknown error"];
+                        [self.hud hideAnimated:YES afterDelay:3.0];
+                        [UIPasteboard generalPasteboard].string = [NSString stringWithFormat:@"File move failed: %@\n", moveError.localizedDescription ?: @"unknown error"];
+                    }
 
                     [[NSFileManager defaultManager] removeItemAtURL:destinationURL error:nil];
 
@@ -96,6 +104,8 @@
 
                     [self.hud hideAnimated:YES afterDelay:3.0];
                     [UIPasteboard generalPasteboard].string = [NSString stringWithFormat:@"Command execution failed with rc=%d and output=%@.\n", returnCode, [MobileFFmpegConfig getLastCommandOutput]];
+                } else if (!self.suppressUserInterface) {
+                    [UIPasteboard generalPasteboard].string = [NSString stringWithFormat:@"Command execution failed with rc=%d and output=%@.\n", returnCode, [MobileFFmpegConfig getLastCommandOutput]];
                 }
 
                 [[NSFileManager defaultManager] removeItemAtURL:destinationURL error:nil];
@@ -120,7 +130,7 @@
 }
 
 - (void)updateProgressDialog {
-    if (statistics == nil) {
+    if (self.suppressUserInterface || statistics == nil) {
         return;
     }
 

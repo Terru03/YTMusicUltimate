@@ -18,6 +18,7 @@ typedef NS_ENUM(NSInteger, YTMFFMpegDownloadResult) {
 @property (nonatomic, strong) NSString *tempName;
 @property (nonatomic, strong) NSString *mediaName;
 @property (nonatomic) NSInteger duration;
+@property (nonatomic) BOOL suppressUserInterface;
 @property (nonatomic, copy) void (^completion)(YTMFFMpegDownloadResult result);
 - (void)downloadAudio:(NSString *)audioURL;
 - (void)downloadImage:(NSURL *)link;
