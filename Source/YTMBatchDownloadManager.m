@@ -20,6 +20,7 @@
 @property (nonatomic, copy) NSString *explicitQueueTitle;
 @property (nonatomic) NSInteger currentTrackNumber;
 @property (nonatomic) NSInteger downloadedTrackCount;
+@property (nonatomic) NSInteger currentTrackDownloadRetryCount;
 @property (nonatomic, strong) NSMutableOrderedSet<NSString *> *downloadedVideoIDs;
 @property (nonatomic) UIBackgroundTaskIdentifier backgroundTaskIdentifier;
 @property (nonatomic, assign, getter=isDownloadingAlbum) BOOL downloadingAlbum;
@@ -122,6 +123,10 @@
 }
 
 - (void)downloadCurrentTrackWithCompletion:(YTMTrackDownloadCompletion)completion {
+    [self downloadCurrentTrackWithRetryCount:0 completion:completion];
+}
+
+- (void)downloadCurrentTrackWithRetryCount:(NSInteger)retryCount completion:(YTMTrackDownloadCompletion)completion {
     YTPlayerViewController *currentPlayerViewController = [self activePlayerViewController];
     if (!self.isDownloadingAlbum || !self.trackDownloader || !currentPlayerViewController) {
         if (completion) {
@@ -146,7 +151,7 @@
         return;
     }
 
-    [self.downloadedVideoIDs addObject:currentVideoID];
+    self.currentTrackDownloadRetryCount = retryCount;
 
     __weak typeof(self) weakSelf = self;
     self.trackDownloader(currentPlayerViewController, [self currentCollectionInfo], ^(BOOL success, BOOL cancelled) {
@@ -156,7 +161,13 @@
         }
 
         if (success) {
+            [self.downloadedVideoIDs addObject:currentVideoID];
             self.downloadedTrackCount += 1;
+            self.currentTrackDownloadRetryCount = 0;
+        } else if (!cancelled &&
+                   [self shouldRetryDownloadForVideoID:currentVideoID retryCount:retryCount]) {
+            [self scheduleRetryForCurrentTrackWithRetryCount:retryCount + 1 completion:completion];
+            return;
         }
 
         if (completion) {
@@ -249,6 +260,7 @@
     self.explicitQueueTitle = nil;
     self.currentTrackNumber = 0;
     self.downloadedTrackCount = 0;
+    self.currentTrackDownloadRetryCount = 0;
     self.downloadedVideoIDs = nil;
     self.downloadingAlbum = NO;
     [self endBackgroundTask];
@@ -351,6 +363,18 @@
     return normalizedValue;
 }
 
+- (BOOL)shouldRetryDownloadForVideoID:(NSString *)videoID retryCount:(NSInteger)retryCount {
+    if (retryCount >= 3 || videoID.length == 0) {
+        return NO;
+    }
+
+    YTPlayerViewController *currentPlayerViewController = [self activePlayerViewController];
+    NSString *currentVideoID = currentPlayerViewController.contentVideoID;
+    return (currentVideoID.length > 0 &&
+            [currentVideoID isEqualToString:videoID] &&
+            [self shouldContinueDownloadingCurrentTrack]);
+}
+
 - (NSString *)stringValueForKeyPaths:(NSArray<NSString *> *)keyPaths onObject:(id)object {
     for (NSString *keyPath in keyPaths) {
         @try {
@@ -363,6 +387,19 @@
     }
 
     return nil;
+}
+
+- (void)scheduleRetryForCurrentTrackWithRetryCount:(NSInteger)retryCount completion:(YTMTrackDownloadCompletion)completion {
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.85 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!self.isDownloadingAlbum) {
+            if (completion) {
+                completion(NO, NO);
+            }
+            return;
+        }
+
+        [self downloadCurrentTrackWithRetryCount:retryCount completion:completion];
+    });
 }
 
 - (YTPlayerViewController *)activePlayerViewController {

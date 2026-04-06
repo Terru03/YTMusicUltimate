@@ -157,6 +157,7 @@ static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *
 %new
 - (void)downloadAudio:(YTPlayerViewController *)playerVC collectionInfo:(NSDictionary *)collectionInfo completion:(YTMTrackDownloadCompletion)completion {
     YTPlayerResponse *playerResponse = playerVC.playerResponse;
+    BOOL isBatchDownload = (collectionInfo.count > 0);
 
     if (!playerResponse) {
         if (completion) {
@@ -175,8 +176,8 @@ static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *
     ffmpeg.duration = MAX(1, round(playerVC.currentVideoTotalMediaTime));
     NSString *downloadedAudioFileName = [NSString stringWithFormat:@"%@.m4a", ffmpeg.mediaName];
 
-    
-    NSString *extractedURL = [self getURLFromManifest:[NSURL URLWithString:urlStr]];
+    NSURL *manifestURL = (urlStr.length > 0 ? [NSURL URLWithString:urlStr] : nil);
+    NSString *extractedURL = manifestURL ? [self getURLFromManifest:manifestURL] : nil;
     
     if (extractedURL.length > 0) {
         ffmpeg.completion = ^(YTMFFMpegDownloadResult result) {
@@ -191,10 +192,12 @@ static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *
         };
         [ffmpeg downloadAudio:extractedURL];
     } else {
-        YTAlertView *alertView = [%c(YTAlertView) infoDialog];
-        alertView.title = LOC(@"OOPS");
-        alertView.subtitle = LOC(@"LINK_NOT_FOUND");
-        [alertView show];
+        if (!isBatchDownload) {
+            YTAlertView *alertView = [%c(YTAlertView) infoDialog];
+            alertView.title = LOC(@"OOPS");
+            alertView.subtitle = LOC(@"LINK_NOT_FOUND");
+            [alertView show];
+        }
 
         if (completion) {
             completion(NO, NO);
@@ -204,8 +207,20 @@ static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *
 
 %new
 - (NSString *)getURLFromManifest:(NSURL *)manifest {
+    if (!manifest) {
+        return nil;
+    }
+
     NSData *manifestData = [NSData dataWithContentsOfURL:manifest];
+    if (manifestData.length == 0) {
+        return nil;
+    }
+
     NSString *manifestString = [[NSString alloc] initWithData:manifestData encoding:NSUTF8StringEncoding];
+    if (manifestString.length == 0) {
+        return nil;
+    }
+
     NSArray *manifestLines = [manifestString componentsSeparatedByString:@"\n"];
 
     NSArray *groupIDS = @[@"234", @"233"]; // Our priority to find group id 234
