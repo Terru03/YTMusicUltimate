@@ -147,6 +147,41 @@ NSString *const YTMLocalPlaybackManagerDidUpdateNotification = @"YTMLocalPlaybac
     self.isPlaying ? [self pause] : [self play];
 }
 
+- (void)stopAndClearSession {
+    dispatch_block_t cleanupBlock = ^{
+        BOOL hadSession = (self.player != nil ||
+                           self.currentIndex != NSNotFound ||
+                           self.tracks.count > 0);
+        if (!hadSession) {
+            return;
+        }
+
+        [self.player pause];
+
+        if (self.timeObserverToken && self.player) {
+            [self.player removeTimeObserver:self.timeObserverToken];
+            self.timeObserverToken = nil;
+        }
+
+        [[NSNotificationCenter defaultCenter] removeObserver:self name:AVPlayerItemDidPlayToEndTimeNotification object:nil];
+        [self.player replaceCurrentItemWithPlayerItem:nil];
+        self.player = nil;
+        self.tracks = @[];
+        self.currentIndex = NSNotFound;
+
+        [self teardownRemotePlaybackSession];
+        [self deactivateAudioSession];
+        self.nowPlayingInfoCenter.nowPlayingInfo = nil;
+        [self notifyStateChanged];
+    };
+
+    if ([NSThread isMainThread]) {
+        cleanupBlock();
+    } else {
+        dispatch_async(dispatch_get_main_queue(), cleanupBlock);
+    }
+}
+
 - (void)playNextTrack {
     if (self.currentIndex == NSNotFound) {
         return;
@@ -346,6 +381,53 @@ NSString *const YTMLocalPlaybackManagerDidUpdateNotification = @"YTMLocalPlaybac
     self.remoteCommandCenter.nextTrackCommand.enabled = YES;
     self.remoteCommandCenter.previousTrackCommand.enabled = YES;
     self.remoteCommandCenter.changePlaybackPositionCommand.enabled = YES;
+}
+
+- (void)teardownRemotePlaybackSession {
+    MPRemoteCommandCenter *commandCenter = self.remoteCommandCenter ?: [MPRemoteCommandCenter sharedCommandCenter];
+    NSArray *commands = @[
+        commandCenter.playCommand,
+        commandCenter.pauseCommand,
+        commandCenter.togglePlayPauseCommand,
+        commandCenter.nextTrackCommand,
+        commandCenter.previousTrackCommand,
+        commandCenter.changePlaybackPositionCommand
+    ];
+
+    for (MPRemoteCommand *command in commands) {
+        [command removeTarget:self];
+        command.enabled = NO;
+    }
+
+    if (self.nowPlayingSession) {
+        SEL inactiveSelector = NSSelectorFromString(@"becomeInactiveIfPossibleWithCompletion:");
+        if ([self.nowPlayingSession respondsToSelector:inactiveSelector]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [self.nowPlayingSession performSelector:inactiveSelector withObject:nil];
+#pragma clang diagnostic pop
+        }
+
+        SEL invalidateSelector = NSSelectorFromString(@"invalidate");
+        if ([self.nowPlayingSession respondsToSelector:invalidateSelector]) {
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            [self.nowPlayingSession performSelector:invalidateSelector];
+#pragma clang diagnostic pop
+        }
+    }
+
+    self.remoteCommandsConfigured = NO;
+    self.remoteCommandCenter = nil;
+    self.nowPlayingSession = nil;
+    self.nowPlayingInfoCenter = [MPNowPlayingInfoCenter defaultCenter];
+}
+
+- (void)deactivateAudioSession {
+    [[UIApplication sharedApplication] endReceivingRemoteControlEvents];
+    [[AVAudioSession sharedInstance] setActive:NO
+                                   withOptions:AVAudioSessionSetActiveOptionNotifyOthersOnDeactivation
+                                         error:nil];
 }
 
 - (MPRemoteCommandHandlerStatus)handlePlayCommand:(__unused MPRemoteCommandEvent *)event {

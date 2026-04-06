@@ -204,6 +204,11 @@
         return;
     }
 
+    if (![[YTMLocalPlaybackManager sharedInstance] hasActiveSession]) {
+        [self closeController];
+        return;
+    }
+
     if (!self.scrubbing) {
         [self refreshInterface];
     }

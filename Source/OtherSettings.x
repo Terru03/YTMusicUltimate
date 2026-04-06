@@ -80,7 +80,7 @@ BOOL isTabSelected = NO;
 - (void)viewDidAppear:(BOOL)animated {
     %orig;
     if (!isTabSelected) {
-        NSArray *pivotIdentifiers = @[@"FEmusic_home", @"FEmusic_immersive", @"FEmusic_explore", @"FEmusic_library_landing", @"BHdownloadsVC"];
+        NSArray *pivotIdentifiers = @[@"FEmusic_home", @"FEmusic_immersive", @"FEmusic_explore", @"FEmusic_library_landing", @"FEmusic_offline"];
         NSDictionary *YTMUltimateDict = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"YTMUltimate"];
         [self selectItemWithPivotIdentifier:pivotIdentifiers[[YTMUltimateDict[@"startupPage"] integerValue]]];
         isTabSelected = YES;

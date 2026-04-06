@@ -13,12 +13,6 @@
 #import "Headers/YTAlertView.h"
 #import "Headers/ELMNodeController.h"
 #import "Prefs/YTMDownloadStore.h"
-#import "YTMBatchDownloadManager.h"
-
-static BOOL YTMU(NSString *key) {
-    NSDictionary *YTMUltimateDict = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"YTMUltimate"];
-    return [YTMUltimateDict[key] boolValue];
-}
 
 @interface UIView ()
 - (UIViewController *)_viewControllerForAncestor;
@@ -77,11 +71,9 @@ static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *
 
 %hook ELMTouchCommandPropertiesHandler
 - (void)handleTap {
-
     if (class_getInstanceVariable([self class], "_controller") == NULL) {
         return %orig;
     }
-
 
     if (class_getInstanceVariable([self class], "_tapRecognizer") == NULL) {
         return %orig;
@@ -98,49 +90,7 @@ static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *
         return %orig;
     }
 
-    YTMNowPlayingViewController *playingVC = (YTMNowPlayingViewController *)tapRecognizer.view._viewControllerForAncestor;
-    YTMWatchViewController *watchVC = (YTMWatchViewController *)playingVC.parentViewController;
-    YTPlayerViewController *playerVC = watchVC.playerViewController;
-    YTPlayerResponse *playerResponse = playerVC.playerResponse;
-
-    if (playerResponse) {
-        YTMActionSheetController *sheetController = [%c(YTMActionSheetController) musicActionSheetController];
-        sheetController.sourceView = tapRecognizer.view;
-        [sheetController addHeaderWithTitle:LOC(@"SELECT_ACTION") subtitle:nil];
-
-        if (YTMU(@"downloadAudio")) {
-            [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_AUDIO") iconImage:[%c(YTUIResources) audioOutline] style:0 handler:^ {
-                [self downloadAudio:playerVC];
-            }]];
-
-            [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:@"Download album" iconImage:[%c(YTUIResources) downloadOutline] style:0 handler:^ {
-                [[YTMBatchDownloadManager sharedInstance] downloadAlbumFromNowPlayingController:playingVC playerViewController:playerVC trackDownloader:^(YTPlayerViewController *currentPlayerVC, NSDictionary *collectionInfo, YTMTrackDownloadCompletion completion) {
-                    [self downloadAudio:currentPlayerVC collectionInfo:collectionInfo completion:completion];
-                }];
-            }]];
-        }
-
-        if (YTMU(@"downloadCoverImage")) {
-            [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_COVER") iconImage:[%c(YTUIResources) outlineImageWithColor:[UIColor whiteColor]] style:0 handler:^ {
-                [self downloadCoverImage:playerVC];
-            }]];
-        }
-
-        [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_PREMIUM") iconImage:[%c(YTUIResources) downloadOutline] secondaryIconImage:[%c(YTUIResources) youtubePremiumBadgeLight] accessibilityIdentifier:nil handler:^ {
-            return %orig;
-        }]];
-
-        if (YTMU(@"downloadAudio")) {
-            [sheetController presentFromViewController:playingVC animated:YES completion:nil];
-        } else if (YTMU(@"downloadCoverImage")) {
-            [self downloadCoverImage:playerVC];
-        }
-    } else {
-        YTAlertView *alertView = [%c(YTAlertView) infoDialog];
-        alertView.title = LOC(@"DONT_RUSH");
-        alertView.subtitle = LOC(@"DONT_RUSH_DESC");
-        [alertView show];
-    }
+    return %orig;
 }
 
 %new

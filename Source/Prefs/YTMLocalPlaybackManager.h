@@ -23,4 +23,5 @@ extern NSString *const YTMLocalPlaybackManagerDidUpdateNotification;
 - (void)playPreviousTrackOrRestart;
 - (void)seekToTime:(NSTimeInterval)time completion:(dispatch_block_t)completion;
 - (void)presentPlayerInterfaceAnimated:(BOOL)animated;
+- (void)stopAndClearSession;
 @end

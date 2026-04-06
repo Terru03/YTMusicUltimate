@@ -1,6 +1,13 @@
 #import "Prefs/YTMLocalMiniPlayerView.h"
 #import "Prefs/YTMLocalPlaybackManager.h"
 
+static void YTMUStopLocalPlaybackIfNeeded(void) {
+    YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
+    if ([manager hasActiveSession]) {
+        [manager stopAndClearSession];
+    }
+}
+
 %hook YTMMiniPlayerView
 - (BOOL)isHidden {
     return [[YTMLocalPlaybackManager sharedInstance] hasActiveSession] ? YES : %orig;
@@ -21,31 +28,29 @@
 }
 
 - (void)didTapPlayButton {
-    if ([[YTMLocalPlaybackManager sharedInstance] hasActiveSession]) {
-        [[YTMLocalPlaybackManager sharedInstance] togglePlayPause];
-        return;
-    }
+    YTMUStopLocalPlaybackIfNeeded();
+    %orig;
+}
 
+- (void)didTapNextButton {
+    YTMUStopLocalPlaybackIfNeeded();
+    %orig;
+}
+
+- (void)didTapPrevButton {
+    YTMUStopLocalPlaybackIfNeeded();
     %orig;
 }
 %end
 
 %hook YTMMiniPlayerViewController
 - (void)didTapMiniplayerPlaybackButton {
-    if ([[YTMLocalPlaybackManager sharedInstance] hasActiveSession]) {
-        [[YTMLocalPlaybackManager sharedInstance] togglePlayPause];
-        return;
-    }
-
+    YTMUStopLocalPlaybackIfNeeded();
     %orig;
 }
 
 - (void)didTapMiniplayerNextButton {
-    if ([[YTMLocalPlaybackManager sharedInstance] hasActiveSession]) {
-        [[YTMLocalPlaybackManager sharedInstance] playNextTrack];
-        return;
-    }
-
+    YTMUStopLocalPlaybackIfNeeded();
     %orig;
 }
 %end
