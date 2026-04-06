@@ -42,11 +42,19 @@ static NSString *YTMUSanitizedMediaComponent(NSString *value) {
 static void YTMUSaveCoverForPlayerResponse(YTPlayerResponse *playerResponse, NSString *author, NSString *title) {
     NSMutableArray *thumbnailsArray = playerResponse.playerData.videoDetails.thumbnail.thumbnailsArray;
     YTIThumbnailDetails_Thumbnail *thumbnail = [thumbnailsArray lastObject];
-    NSData *imageData = [NSData dataWithContentsOfURL:[NSURL URLWithString:thumbnail.URL]];
+    NSString *thumbnailURL = thumbnail.URL ?: @"";
+    if (thumbnailURL.length == 0) {
+        return;
+    }
+
+    if (thumbnail.width > 0) {
+        thumbnailURL = [thumbnailURL stringByReplacingOccurrencesOfString:[NSString stringWithFormat:@"w%u-h%u-", thumbnail.width, thumbnail.width] withString:@"w2048-h2048-"];
+    }
+
+    NSData *imageData = [NSData dataWithContentsOfURL:[NSURL URLWithString:thumbnailURL]];
 
     if (imageData) {
-        NSURL *documentsURL = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject];
-        NSURL *coverURL = [documentsURL URLByAppendingPathComponent:[NSString stringWithFormat:@"YTMusicUltimate/%@ - %@.png", author, title]];
+        NSURL *coverURL = [[YTMDownloadStore downloadsDirectoryURL] URLByAppendingPathComponent:[NSString stringWithFormat:@"%@ - %@.png", author, title]];
         [imageData writeToURL:coverURL atomically:YES];
     }
 }

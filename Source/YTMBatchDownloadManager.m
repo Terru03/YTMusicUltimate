@@ -19,10 +19,12 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
 @property (nonatomic, strong) YTPlayerViewController *playerViewController;
 @property (nonatomic, copy) YTMTrackDownloadBlock trackDownloader;
 @property (nonatomic, copy) NSString *initialVideoID;
-@property (nonatomic, copy) NSString *albumArtworkURL;
 @property (nonatomic, copy) NSString *collectionIdentifier;
 @property (nonatomic, copy) NSString *collectionTitle;
 @property (nonatomic, copy) NSString *collectionSubtitle;
+@property (nonatomic, copy) NSString *explicitAlbumTitle;
+@property (nonatomic, copy) NSString *collectionArtist;
+@property (nonatomic, copy) NSString *albumArtworkSignature;
 @property (nonatomic) CGFloat initialPlaybackTime;
 @property (nonatomic) NSInteger forwardStepCount;
 @property (nonatomic) NSInteger backwardStepCount;
@@ -51,9 +53,8 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     }
 
     NSString *currentVideoID = playerViewController.contentVideoID;
-    NSString *albumArtworkURL = [self currentArtworkURLForPlayerViewController:playerViewController];
 
-    if (currentVideoID.length == 0 || albumArtworkURL.length == 0 || !playerViewController.playerResponse) {
+    if (currentVideoID.length == 0 || !playerViewController.playerResponse) {
         return;
     }
 
@@ -62,10 +63,12 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     self.playerViewController = playerViewController;
     self.trackDownloader = trackDownloader;
     self.initialVideoID = currentVideoID;
-    self.albumArtworkURL = albumArtworkURL;
     self.collectionIdentifier = [NSUUID UUID].UUIDString;
+    self.explicitAlbumTitle = [self explicitAlbumTitleForPlayerViewController:playerViewController];
     self.collectionTitle = [self preferredCollectionTitleForPlayerViewController:playerViewController];
     self.collectionSubtitle = [self preferredCollectionSubtitleForPlayerViewController:playerViewController];
+    self.collectionArtist = [self normalizedString:playerViewController.playerResponse.playerData.videoDetails.author];
+    self.albumArtworkSignature = [self artworkSignatureForPlayerViewController:playerViewController];
     self.initialPlaybackTime = [playerViewController currentVideoMediaTime];
     self.forwardStepCount = 0;
     self.backwardStepCount = 0;
@@ -198,7 +201,7 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     [self performNavigationInDirection:direction];
 
     __weak typeof(self) weakSelf = self;
-    [self waitForTrackChangeFromVideoID:currentVideoID attempt:0 completion:^(BOOL changed) {
+    [self waitForTrackReadinessFromVideoID:currentVideoID attempt:0 completion:^(BOOL changed) {
         __strong typeof(weakSelf) self = weakSelf;
         if (!self || !changed) {
             if (completion) {
@@ -208,13 +211,12 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
         }
 
         NSString *newVideoID = self.playerViewController.contentVideoID;
-        NSString *newArtworkURL = [self currentArtworkURLForPlayerViewController:self.playerViewController];
-        BOOL sameAlbum = (newArtworkURL.length > 0 && [newArtworkURL isEqualToString:self.albumArtworkURL]);
+        BOOL sameAlbum = [self isCurrentTrackPartOfCollection];
         BOOL alreadyDownloaded = [self.downloadedVideoIDs containsObject:newVideoID];
 
         if (newVideoID.length == 0 || !sameAlbum || alreadyDownloaded) {
             [self performNavigationInDirection:[self oppositeDirectionForDirection:direction]];
-            [self waitForTrackChangeFromVideoID:newVideoID attempt:0 completion:^(__unused BOOL reverted) {
+            [self waitForTrackReadinessFromVideoID:newVideoID attempt:0 completion:^(__unused BOOL reverted) {
                 if (completion) {
                     completion(NO);
                 }
@@ -240,38 +242,6 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     });
 }
 
-- (void)waitForTrackChangeFromVideoID:(NSString *)videoID attempt:(NSInteger)attempt completion:(void (^)(BOOL changed))completion {
-    if (!self.isDownloadingAlbum) {
-        if (completion) {
-            completion(NO);
-        }
-        return;
-    }
-
-    if (attempt >= 40) {
-        if (completion) {
-            completion(NO);
-        }
-        return;
-    }
-
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        NSString *currentVideoID = self.playerViewController.contentVideoID;
-        BOOL didTrackChange = (currentVideoID.length > 0 &&
-                               ![currentVideoID isEqualToString:videoID] &&
-                               self.playerViewController.playerResponse != nil);
-
-        if (didTrackChange) {
-            if (completion) {
-                completion(YES);
-            }
-            return;
-        }
-
-        [self waitForTrackChangeFromVideoID:videoID attempt:attempt + 1 completion:completion];
-    });
-}
-
 - (void)restoreTrackPositionWithDirection:(YTMAlbumDownloadDirection)direction
                            stepsRemaining:(NSInteger)stepsRemaining
                                completion:(dispatch_block_t)completion {
@@ -293,7 +263,7 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     [self performNavigationInDirection:direction];
 
     __weak typeof(self) weakSelf = self;
-    [self waitForTrackChangeFromVideoID:currentVideoID attempt:0 completion:^(BOOL changed) {
+    [self waitForTrackReadinessFromVideoID:currentVideoID attempt:0 completion:^(BOOL changed) {
         __strong typeof(weakSelf) self = weakSelf;
         if (!self || !changed) {
             if (completion) {
@@ -333,7 +303,9 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     self.playerViewController = nil;
     self.trackDownloader = nil;
     self.initialVideoID = nil;
-    self.albumArtworkURL = nil;
+    self.explicitAlbumTitle = nil;
+    self.collectionArtist = nil;
+    self.albumArtworkSignature = nil;
     self.collectionIdentifier = nil;
     self.collectionTitle = nil;
     self.collectionSubtitle = nil;
@@ -352,6 +324,41 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     YTIThumbnailDetails_Thumbnail *thumbnail = [thumbnailsArray lastObject];
 
     return thumbnail.URL ?: @"";
+}
+
+- (NSString *)artworkSignatureForPlayerViewController:(YTPlayerViewController *)playerViewController {
+    NSString *artworkURL = [self currentArtworkURLForPlayerViewController:playerViewController];
+    if (artworkURL.length == 0) {
+        return @"";
+    }
+
+    NSURL *URL = [NSURL URLWithString:artworkURL];
+    NSString *signature = URL.lastPathComponent.length > 0 ? URL.lastPathComponent : artworkURL;
+    NSRange equalsRange = [signature rangeOfString:@"=" options:NSBackwardsSearch];
+    if (equalsRange.location != NSNotFound) {
+        signature = [signature substringToIndex:equalsRange.location];
+    }
+
+    return [self normalizedString:signature];
+}
+
+- (BOOL)isCurrentTrackPartOfCollection {
+    NSString *currentAlbumTitle = [self explicitAlbumTitleForPlayerViewController:self.playerViewController];
+    if (self.explicitAlbumTitle.length > 0 && currentAlbumTitle.length > 0) {
+        return [[self normalizedString:currentAlbumTitle] isEqualToString:[self normalizedString:self.explicitAlbumTitle]];
+    }
+
+    NSString *currentArtworkSignature = [self artworkSignatureForPlayerViewController:self.playerViewController];
+    if (self.albumArtworkSignature.length > 0 && currentArtworkSignature.length > 0) {
+        return [currentArtworkSignature isEqualToString:self.albumArtworkSignature];
+    }
+
+    NSString *currentArtist = [self normalizedString:self.playerViewController.playerResponse.playerData.videoDetails.author];
+    if (self.collectionArtist.length > 0 && currentArtist.length > 0) {
+        return [currentArtist isEqualToString:self.collectionArtist];
+    }
+
+    return YES;
 }
 
 - (YTMAlbumDownloadDirection)oppositeDirectionForDirection:(YTMAlbumDownloadDirection)direction {
@@ -376,8 +383,8 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     return collectionInfo;
 }
 
-- (NSString *)preferredCollectionTitleForPlayerViewController:(YTPlayerViewController *)playerViewController {
-    NSString *albumName = [self stringValueForKeyPaths:@[
+- (NSString *)explicitAlbumTitleForPlayerViewController:(YTPlayerViewController *)playerViewController {
+    return [self stringValueForKeyPaths:@[
         @"playerResponse.playerData.videoDetails.album",
         @"playerResponse.playerData.videoDetails.albumName",
         @"playerResponse.playerData.videoDetails.musicAlbumName",
@@ -385,6 +392,10 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
         @"playerResponse.playerData.albumName",
         @"playerResponse.playerData.subtitle"
     ] onObject:playerViewController];
+}
+
+- (NSString *)preferredCollectionTitleForPlayerViewController:(YTPlayerViewController *)playerViewController {
+    NSString *albumName = [self explicitAlbumTitleForPlayerViewController:playerViewController];
 
     if (albumName.length > 0) {
         return albumName;
@@ -405,6 +416,11 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     return title.length > 0 ? title : @"Album download";
 }
 
+- (NSString *)normalizedString:(NSString *)value {
+    NSString *normalizedValue = [[value ?: @"" lowercaseString] stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    return normalizedValue;
+}
+
 - (NSString *)stringValueForKeyPaths:(NSArray<NSString *> *)keyPaths onObject:(id)object {
     for (NSString *keyPath in keyPaths) {
         @try {
@@ -417,6 +433,50 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     }
 
     return nil;
+}
+
+- (BOOL)isTrackReadyForDownload {
+    YTPlayerResponse *playerResponse = self.playerViewController.playerResponse;
+    NSString *title = playerResponse.playerData.videoDetails.title;
+    NSString *author = playerResponse.playerData.videoDetails.author;
+    NSString *manifestURL = playerResponse.playerData.streamingData.hlsManifestURL;
+
+    return (playerResponse != nil &&
+            title.length > 0 &&
+            author.length > 0 &&
+            manifestURL.length > 0);
+}
+
+- (void)waitForTrackReadinessFromVideoID:(NSString *)videoID
+                                 attempt:(NSInteger)attempt
+                              completion:(void (^)(BOOL changed))completion {
+    if (!self.isDownloadingAlbum) {
+        if (completion) {
+            completion(NO);
+        }
+        return;
+    }
+
+    if (attempt >= 50) {
+        if (completion) {
+            completion(NO);
+        }
+        return;
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        NSString *currentVideoID = self.playerViewController.contentVideoID;
+        BOOL didTrackChange = (currentVideoID.length > 0 && ![currentVideoID isEqualToString:videoID]);
+
+        if (didTrackChange && [self isTrackReadyForDownload]) {
+            if (completion) {
+                completion(YES);
+            }
+            return;
+        }
+
+        [self waitForTrackReadinessFromVideoID:videoID attempt:attempt + 1 completion:completion];
+    });
 }
 
 @end

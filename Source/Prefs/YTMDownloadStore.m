@@ -209,7 +209,11 @@ static NSArray<NSString *> *YTMUAudioExtensions(void) {
     payload[@"displayName"] = payload[@"displayName"] ?: baseName;
     payload[@"createdAt"] = payload[@"createdAt"] ?: [NSDate date];
 
-    [payload writeToURL:[self metadataURLForBaseName:baseName] atomically:YES];
+    if ([payload writeToURL:[self metadataURLForBaseName:baseName] atomically:YES]) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"ReloadDataNotification" object:nil];
+        });
+    }
 }
 
 + (BOOL)renameTrack:(NSMutableDictionary *)track toDisplayName:(NSString *)displayName error:(NSError **)error {

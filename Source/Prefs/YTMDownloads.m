@@ -1,6 +1,7 @@
 #import "YTMDownloads.h"
 #import "YTMDownloadStore.h"
 #import "YTMDownloadsCollectionViewController.h"
+#import "YTMLocalPlayerViewController.h"
 
 typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
     YTMDownloadsModeAllSongs = 0,
@@ -368,43 +369,34 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
 }
 
 - (void)playTracks:(NSArray<NSDictionary *> *)tracks startIndex:(NSInteger)startIndex shuffle:(BOOL)shuffle collectionTitle:(NSString *)collectionTitle {
-    NSArray<NSDictionary *> *playbackTracks = [self playbackOrderForTracks:tracks startIndex:startIndex shuffle:shuffle];
-    if (playbackTracks.count == 0) {
+    NSArray<NSDictionary *> *playbackTracks = [self playbackOrderForTracks:tracks shuffle:shuffle];
+    NSInteger playbackStartIndex = shuffle ? 0 : startIndex;
+    if (playbackTracks.count == 0 || playbackStartIndex < 0 || playbackStartIndex >= playbackTracks.count) {
         return;
     }
 
-    [self configureAudioSession];
-
-    NSMutableArray<AVPlayerItem *> *items = [NSMutableArray array];
-    for (NSDictionary *track in playbackTracks) {
-        AVPlayerItem *item = [self playerItemForTrack:track collectionTitle:collectionTitle ?: track[@"collectionTitle"]];
-        if (item) {
-            [items addObject:item];
+    if (collectionTitle.length > 0) {
+        NSMutableArray<NSMutableDictionary *> *decoratedTracks = [NSMutableArray array];
+        for (NSDictionary *track in playbackTracks) {
+            NSMutableDictionary *mutableTrack = [track mutableCopy];
+            mutableTrack[@"collectionTitle"] = collectionTitle;
+            [decoratedTracks addObject:mutableTrack];
         }
+        playbackTracks = decoratedTracks;
     }
 
-    if (items.count == 0) {
-        return;
-    }
-
-    AVPlayerViewController *playerViewController = [[AVPlayerViewController alloc] init];
-    playerViewController.player = [AVQueuePlayer queuePlayerWithItems:items];
-    [self presentViewController:playerViewController animated:YES completion:^{
-        [playerViewController.player play];
-    }];
+    YTMLocalPlayerViewController *playerViewController = [[YTMLocalPlayerViewController alloc] initWithTracks:playbackTracks startIndex:playbackStartIndex];
+    UINavigationController *navigationController = [[UINavigationController alloc] initWithRootViewController:playerViewController];
+    navigationController.modalPresentationStyle = UIModalPresentationFullScreen;
+    [self presentViewController:navigationController animated:YES completion:nil];
 }
 
-- (NSArray<NSDictionary *> *)playbackOrderForTracks:(NSArray<NSDictionary *> *)tracks startIndex:(NSInteger)startIndex shuffle:(BOOL)shuffle {
+- (NSArray<NSDictionary *> *)playbackOrderForTracks:(NSArray<NSDictionary *> *)tracks shuffle:(BOOL)shuffle {
     NSMutableArray<NSDictionary *> *orderedTracks = [tracks mutableCopy];
     if (shuffle) {
         for (NSUInteger index = orderedTracks.count; index > 1; index--) {
             [orderedTracks exchangeObjectAtIndex:index - 1 withObjectAtIndex:arc4random_uniform((u_int32_t)index)];
         }
-        return orderedTracks;
-    }
-
-    if (startIndex >= 0 && startIndex < orderedTracks.count) {
-        return [orderedTracks subarrayWithRange:NSMakeRange(startIndex, orderedTracks.count - startIndex)];
     }
 
     return orderedTracks;
@@ -467,7 +459,7 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
 
 - (UIImage *)roundedImage:(UIImage *)image targetSize:(CGFloat)targetSize {
     if (!image) {
-        return nil;
+        return [self placeholderArtworkImageForTargetSize:targetSize];
     }
 
     CGFloat scaleFactor = targetSize / MAX(image.size.width, image.size.height);
@@ -478,6 +470,23 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
     UIImage *roundedImage = UIGraphicsGetImageFromCurrentImageContext();
     UIGraphicsEndImageContext();
     return [roundedImage imageWithRenderingMode:UIImageRenderingModeAlwaysOriginal];
+}
+
+- (UIImage *)placeholderArtworkImageForTargetSize:(CGFloat)targetSize {
+    UIGraphicsImageRenderer *renderer = [[UIGraphicsImageRenderer alloc] initWithSize:CGSizeMake(targetSize, targetSize)];
+    return [renderer imageWithActions:^(UIGraphicsImageRendererContext * _Nonnull rendererContext) {
+        CGRect rect = CGRectMake(0, 0, targetSize, targetSize);
+        [[UIBezierPath bezierPathWithRoundedRect:rect cornerRadius:6.0] addClip];
+        [[[UIColor whiteColor] colorWithAlphaComponent:0.08] setFill];
+        UIRectFill(rect);
+
+        UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:targetSize * 0.42 weight:UIImageSymbolWeightRegular];
+        UIImage *symbolImage = [[UIImage systemImageNamed:@"music.note.list"] imageWithConfiguration:configuration];
+        symbolImage = [symbolImage imageWithTintColor:[[UIColor whiteColor] colorWithAlphaComponent:0.7] renderingMode:UIImageRenderingModeAlwaysOriginal];
+        CGSize symbolSize = symbolImage.size;
+        CGRect symbolRect = CGRectMake((targetSize - symbolSize.width) / 2.0, (targetSize - symbolSize.height) / 2.0, symbolSize.width, symbolSize.height);
+        [symbolImage drawInRect:symbolRect];
+    }];
 }
 
 - (void)activityControllerWithObjects:(NSArray<id> *)items sender:(UIView *)sender {
