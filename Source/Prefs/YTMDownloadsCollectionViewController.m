@@ -136,7 +136,10 @@
             if (self.onLibraryChanged) {
                 self.onLibraryChanged();
             }
-            [[[YTMToastController alloc] init] showMessage:LOC(@"DONE")];
+            Class toastClass = NSClassFromString(@"YTMToastController");
+            if (toastClass) {
+                [(id)[toastClass new] showMessage:LOC(@"DONE")];
+            }
             [self dismissViewControllerAnimated:YES completion:nil];
         }
     } actionTitle:LOC(@"DELETE")];

@@ -276,7 +276,10 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
         [YTMDownloadStore renameTrack:track toDisplayName:textView.text error:&renameError];
         if (!renameError) {
             [self reloadData];
-            [[[YTMToastController alloc] init] showMessage:LOC(@"DONE")];
+            Class toastClass = NSClassFromString(@"YTMToastController");
+            if (toastClass) {
+                [(id)[toastClass new] showMessage:LOC(@"DONE")];
+            }
         }
     } actionTitle:LOC(@"RENAME")];
     alertView.title = @"YTMusicUltimate";
@@ -295,7 +298,10 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
         [YTMDownloadStore renameCollectionWithIdentifier:collection[@"identifier"] title:textView.text tracks:self.tracks error:&renameError];
         if (!renameError) {
             [self reloadData];
-            [[[YTMToastController alloc] init] showMessage:LOC(@"DONE")];
+            Class toastClass = NSClassFromString(@"YTMToastController");
+            if (toastClass) {
+                [(id)[toastClass new] showMessage:LOC(@"DONE")];
+            }
         }
     } actionTitle:LOC(@"RENAME")];
     alertView.title = @"YTMusicUltimate";

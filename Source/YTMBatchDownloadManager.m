@@ -318,7 +318,10 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
 
         if (downloadedTrackCount > 0) {
             NSString *message = [NSString stringWithFormat:@"%@ (%ld)", LOC(@"DONE"), (long)downloadedTrackCount];
-            [[[YTMToastController alloc] init] showMessage:message];
+            Class toastClass = NSClassFromString(@"YTMToastController");
+            if (toastClass) {
+                [(id)[toastClass new] showMessage:message];
+            }
         }
 
         [self resetState];
