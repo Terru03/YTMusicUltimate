@@ -1,6 +1,8 @@
 #import "Headers/YTPivotBarView.h"
 #import "Headers/YTIPivotBarSupportedRenderers.h"
 #import "Headers/YTAssetLoader.h"
+#import "Headers/Localization.h"
+#import "Utils/NSBundle+YTMU.h"
 
 static BOOL YTMU(NSString *key) {
     NSDictionary *YTMUltimateDict = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"YTMUltimate"];

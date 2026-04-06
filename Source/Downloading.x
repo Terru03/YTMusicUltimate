@@ -13,6 +13,7 @@
 #import "Headers/YTAlertView.h"
 #import "Headers/ELMNodeController.h"
 #import "Prefs/YTMDownloadStore.h"
+#import "YTMBatchDownloadManager.h"
 
 @interface UIView ()
 - (UIViewController *)_viewControllerForAncestor;
