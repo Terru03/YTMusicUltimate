@@ -1,11 +1,10 @@
 #import "YTMLocalPlayerViewController.h"
-#import <AVFoundation/AVFoundation.h>
 #import <math.h>
+#import "YTMLocalPlaybackManager.h"
 
 @interface YTMLocalPlayerViewController ()
 @property (nonatomic, copy) NSArray<NSDictionary *> *tracks;
-@property (nonatomic) NSInteger currentIndex;
-@property (nonatomic, strong) AVPlayer *player;
+@property (nonatomic) NSInteger startIndex;
 @property (nonatomic, strong) UIImageView *artworkView;
 @property (nonatomic, strong) UILabel *titleLabel;
 @property (nonatomic, strong) UILabel *subtitleLabel;
@@ -17,7 +16,6 @@
 @property (nonatomic, strong) UIButton *previousButton;
 @property (nonatomic, strong) UIButton *playPauseButton;
 @property (nonatomic, strong) UIButton *nextButton;
-@property (nonatomic, strong) id timeObserverToken;
 @property (nonatomic) BOOL scrubbing;
 @end
 
@@ -27,7 +25,7 @@
     self = [super init];
     if (self) {
         _tracks = [tracks copy] ?: @[];
-        _currentIndex = MAX(0, MIN(startIndex, (NSInteger)_tracks.count - 1));
+        _startIndex = MAX(0, MIN(startIndex, (NSInteger)_tracks.count - 1));
     }
     return self;
 }
@@ -39,20 +37,18 @@
     self.title = @"Downloads";
     self.navigationItem.leftBarButtonItem = [[UIBarButtonItem alloc] initWithBarButtonSystemItem:UIBarButtonSystemItemClose target:self action:@selector(closeController)];
 
-    [self configureAudioSession];
     [self buildInterface];
-    [self loadTrackAtIndex:self.currentIndex autoplay:YES];
+
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playbackStateDidChange:) name:YTMLocalPlaybackManagerDidUpdateNotification object:[YTMLocalPlaybackManager sharedInstance]];
+    [[YTMLocalPlaybackManager sharedInstance] loadTracks:self.tracks startIndex:self.startIndex autoplay:YES];
+    [self refreshInterface];
 }
 
 - (void)dealloc {
-    if (self.timeObserverToken && self.player) {
-        [self.player removeTimeObserver:self.timeObserverToken];
-    }
     [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 - (void)closeController {
-    [self.player pause];
     [self dismissViewControllerAnimated:YES completion:nil];
 }
 
@@ -100,9 +96,7 @@
     self.artworkView.clipsToBounds = YES;
     self.artworkView.layer.cornerRadius = 22.0;
     [stackView addArrangedSubview:self.artworkView];
-
-    NSLayoutConstraint *artworkHeightConstraint = [self.artworkView.heightAnchor constraintEqualToConstant:300.0];
-    artworkHeightConstraint.active = YES;
+    [[self.artworkView.heightAnchor constraintEqualToConstant:300.0] setActive:YES];
 
     self.titleLabel = [[UILabel alloc] init];
     self.titleLabel.textColor = [UIColor whiteColor];
@@ -202,50 +196,23 @@
     return button;
 }
 
-- (void)loadTrackAtIndex:(NSInteger)index autoplay:(BOOL)autoplay {
-    if (index < 0 || index >= self.tracks.count) {
+- (void)playbackStateDidChange:(NSNotification *)notification {
+    if (notification.object != [YTMLocalPlaybackManager sharedInstance]) {
         return;
     }
 
-    self.currentIndex = index;
-    NSDictionary *track = self.tracks[index];
-    NSURL *audioURL = track[@"audioURL"];
-    if (!audioURL) {
-        return;
+    if (!self.scrubbing) {
+        [self refreshInterface];
     }
-
-    AVPlayerItem *item = [AVPlayerItem playerItemWithURL:audioURL];
-    [[NSNotificationCenter defaultCenter] removeObserver:self name:AVPlayerItemDidPlayToEndTimeNotification object:nil];
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playerItemDidFinishPlaying:) name:AVPlayerItemDidPlayToEndTimeNotification object:item];
-
-    if (!self.player) {
-        self.player = [AVPlayer playerWithPlayerItem:item];
-        __weak typeof(self) weakSelf = self;
-        self.timeObserverToken = [self.player addPeriodicTimeObserverForInterval:CMTimeMakeWithSeconds(0.5, NSEC_PER_SEC) queue:dispatch_get_main_queue() usingBlock:^(CMTime time) {
-            __strong typeof(weakSelf) self = weakSelf;
-            if (!self || self.scrubbing) {
-                return;
-            }
-            [self updateProgressWithCurrentTime:CMTimeGetSeconds(time)];
-        }];
-    } else {
-        [self.player replaceCurrentItemWithPlayerItem:item];
-    }
-
-    [self updateInterfaceForTrack:track];
-    [self updateProgressWithCurrentTime:0.0];
-    [self updateNavigationButtons];
-
-    if (autoplay) {
-        [self.player play];
-    } else {
-        [self.player pause];
-    }
-
-    [self updatePlayPauseButton];
 }
 
-- (void)updateInterfaceForTrack:(NSDictionary *)track {
+- (void)refreshInterface {
+    YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
+    NSDictionary *track = [manager currentTrack];
+    if (!track) {
+        return;
+    }
+
     NSString *displayName = track[@"displayName"];
     NSString *title = track[@"title"];
     NSString *artist = track[@"artist"];
@@ -254,20 +221,23 @@
     self.titleLabel.text = displayName.length > 0 ? displayName : title;
     self.subtitleLabel.text = artist.length > 0 ? artist : title;
     self.collectionLabel.text = collectionTitle.length > 0 ? collectionTitle : @"Downloaded audio";
-    self.queueLabel.text = [NSString stringWithFormat:@"Track %ld of %ld", (long)self.currentIndex + 1, (long)self.tracks.count];
+    self.queueLabel.text = [NSString stringWithFormat:@"Track %ld of %ld", (long)manager.currentIndex + 1, (long)manager.tracks.count];
 
     UIImage *artworkImage = [self artworkImageForTrack:track];
     self.artworkView.image = artworkImage ?: [self placeholderArtworkImage];
+
+    NSTimeInterval duration = [manager currentDuration];
+    NSTimeInterval currentTime = [manager currentTime];
+    self.progressSlider.maximumValue = duration > 0 ? duration : 1.0;
+    self.progressSlider.value = duration > 0 ? MIN(currentTime, duration) : 0.0;
+    [self updateTimeLabelsForCurrentTime:currentTime duration:duration];
+    [self updateNavigationButtons];
+    [self updatePlayPauseButton];
 }
 
 - (UIImage *)artworkImageForTrack:(NSDictionary *)track {
     NSURL *coverURL = track[@"coverURL"];
-    if (!coverURL) {
-        return nil;
-    }
-
-    UIImage *image = [UIImage imageWithContentsOfFile:coverURL.path];
-    return image;
+    return coverURL ? [UIImage imageWithContentsOfFile:coverURL.path] : nil;
 }
 
 - (UIImage *)placeholderArtworkImage {
@@ -286,49 +256,16 @@
     }];
 }
 
-- (void)playerItemDidFinishPlaying:(NSNotification *)notification {
-    if (notification.object != self.player.currentItem) {
-        return;
-    }
-
-    if (self.currentIndex + 1 < self.tracks.count) {
-        [self loadTrackAtIndex:self.currentIndex + 1 autoplay:YES];
-        return;
-    }
-
-    [self.player pause];
-    [self updatePlayPauseButton];
-}
-
 - (void)didTapPrevious {
-    NSTimeInterval currentTime = MAX(CMTimeGetSeconds(self.player.currentTime), 0.0);
-    if (currentTime > 3.0 || self.currentIndex == 0) {
-        [self.player seekToTime:kCMTimeZero toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero];
-        [self updateProgressWithCurrentTime:0.0];
-        return;
-    }
-
-    [self loadTrackAtIndex:self.currentIndex - 1 autoplay:YES];
+    [[YTMLocalPlaybackManager sharedInstance] playPreviousTrackOrRestart];
 }
 
 - (void)didTapPlayPause {
-    if (self.player.rate > 0.0) {
-        [self.player pause];
-    } else {
-        [self.player play];
-    }
-
-    [self updatePlayPauseButton];
+    [[YTMLocalPlaybackManager sharedInstance] togglePlayPause];
 }
 
 - (void)didTapNext {
-    if (self.currentIndex + 1 >= self.tracks.count) {
-        [self.player pause];
-        [self updatePlayPauseButton];
-        return;
-    }
-
-    [self loadTrackAtIndex:self.currentIndex + 1 autoplay:YES];
+    [[YTMLocalPlaybackManager sharedInstance] playNextTrack];
 }
 
 - (void)sliderTouchDown:(UISlider *)slider {
@@ -336,45 +273,14 @@
 }
 
 - (void)sliderValueChanged:(UISlider *)slider {
-    [self updateTimeLabelsForCurrentTime:slider.value duration:[self currentDuration]];
+    [self updateTimeLabelsForCurrentTime:slider.value duration:[[YTMLocalPlaybackManager sharedInstance] currentDuration]];
 }
 
 - (void)sliderTouchUp:(UISlider *)slider {
     self.scrubbing = NO;
-    CMTime targetTime = CMTimeMakeWithSeconds(slider.value, NSEC_PER_SEC);
-    __weak typeof(self) weakSelf = self;
-    [self.player seekToTime:targetTime toleranceBefore:kCMTimeZero toleranceAfter:kCMTimeZero completionHandler:^(__unused BOOL finished) {
-        dispatch_async(dispatch_get_main_queue(), ^{
-            __strong typeof(weakSelf) self = weakSelf;
-            if (!self) {
-                return;
-            }
-
-            [self updateProgressWithCurrentTime:slider.value];
-        });
+    [[YTMLocalPlaybackManager sharedInstance] seekToTime:slider.value completion:^{
+        [self refreshInterface];
     }];
-}
-
-- (void)updateProgressWithCurrentTime:(NSTimeInterval)currentTime {
-    NSTimeInterval duration = [self currentDuration];
-    self.progressSlider.maximumValue = duration > 0 ? duration : 1.0;
-    self.progressSlider.value = duration > 0 ? MIN(currentTime, duration) : 0.0;
-    [self updateTimeLabelsForCurrentTime:currentTime duration:duration];
-    [self updateNavigationButtons];
-}
-
-- (NSTimeInterval)currentDuration {
-    CMTime duration = self.player.currentItem.duration;
-    if (!CMTIME_IS_NUMERIC(duration)) {
-        return 0.0;
-    }
-
-    NSTimeInterval seconds = CMTimeGetSeconds(duration);
-    if (!isfinite(seconds) || seconds < 0.0) {
-        return 0.0;
-    }
-
-    return seconds;
 }
 
 - (void)updateTimeLabelsForCurrentTime:(NSTimeInterval)currentTime duration:(NSTimeInterval)duration {
@@ -401,24 +307,22 @@
 }
 
 - (void)updateNavigationButtons {
-    self.previousButton.enabled = (self.currentIndex > 0 || CMTimeGetSeconds(self.player.currentTime) > 3.0);
-    self.previousButton.alpha = self.previousButton.enabled ? 1.0 : 0.45;
-    self.nextButton.enabled = self.currentIndex + 1 < self.tracks.count;
-    self.nextButton.alpha = self.nextButton.enabled ? 1.0 : 0.45;
+    YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
+    BOOL canGoBack = (manager.currentIndex > 0 || [manager currentTime] > 3.0);
+    self.previousButton.enabled = canGoBack;
+    self.previousButton.alpha = canGoBack ? 1.0 : 0.45;
+
+    BOOL canGoNext = manager.currentIndex != NSNotFound && manager.currentIndex + 1 < manager.tracks.count;
+    self.nextButton.enabled = canGoNext;
+    self.nextButton.alpha = canGoNext ? 1.0 : 0.45;
 }
 
 - (void)updatePlayPauseButton {
-    NSString *systemName = self.player.rate > 0.0 ? @"pause.fill" : @"play.fill";
+    BOOL isPlaying = [YTMLocalPlaybackManager sharedInstance].playing;
+    NSString *systemName = isPlaying ? @"pause.fill" : @"play.fill";
     UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:30.0 weight:UIImageSymbolWeightSemibold];
     UIImage *image = [[UIImage systemImageNamed:systemName] imageWithConfiguration:configuration];
     [self.playPauseButton setImage:image forState:UIControlStateNormal];
-    [self updateNavigationButtons];
-}
-
-- (void)configureAudioSession {
-    AVAudioSession *audioSession = [AVAudioSession sharedInstance];
-    [audioSession setCategory:AVAudioSessionCategoryPlayback error:nil];
-    [audioSession setActive:YES error:nil];
 }
 
 @end

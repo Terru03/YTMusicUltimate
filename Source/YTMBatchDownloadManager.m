@@ -23,8 +23,6 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
 @property (nonatomic, copy) NSString *collectionTitle;
 @property (nonatomic, copy) NSString *collectionSubtitle;
 @property (nonatomic, copy) NSString *explicitAlbumTitle;
-@property (nonatomic, copy) NSString *collectionArtist;
-@property (nonatomic, copy) NSString *albumArtworkSignature;
 @property (nonatomic) CGFloat initialPlaybackTime;
 @property (nonatomic) NSInteger forwardStepCount;
 @property (nonatomic) NSInteger backwardStepCount;
@@ -67,8 +65,6 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     self.explicitAlbumTitle = [self explicitAlbumTitleForPlayerViewController:playerViewController];
     self.collectionTitle = [self preferredCollectionTitleForPlayerViewController:playerViewController];
     self.collectionSubtitle = [self preferredCollectionSubtitleForPlayerViewController:playerViewController];
-    self.collectionArtist = [self normalizedString:playerViewController.playerResponse.playerData.videoDetails.author];
-    self.albumArtworkSignature = [self artworkSignatureForPlayerViewController:playerViewController];
     self.initialPlaybackTime = [playerViewController currentVideoMediaTime];
     self.forwardStepCount = 0;
     self.backwardStepCount = 0;
@@ -211,10 +207,10 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
         }
 
         NSString *newVideoID = self.playerViewController.contentVideoID;
-        BOOL sameAlbum = [self isCurrentTrackPartOfCollection];
         BOOL alreadyDownloaded = [self.downloadedVideoIDs containsObject:newVideoID];
+        BOOL shouldContinue = [self shouldContinueDownloadingCurrentTrack];
 
-        if (newVideoID.length == 0 || !sameAlbum || alreadyDownloaded) {
+        if (newVideoID.length == 0 || !shouldContinue || alreadyDownloaded) {
             [self performNavigationInDirection:[self oppositeDirectionForDirection:direction]];
             [self waitForTrackReadinessFromVideoID:newVideoID attempt:0 completion:^(__unused BOOL reverted) {
                 if (completion) {
@@ -304,8 +300,6 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     self.trackDownloader = nil;
     self.initialVideoID = nil;
     self.explicitAlbumTitle = nil;
-    self.collectionArtist = nil;
-    self.albumArtworkSignature = nil;
     self.collectionIdentifier = nil;
     self.collectionTitle = nil;
     self.collectionSubtitle = nil;
@@ -326,36 +320,10 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     return thumbnail.URL ?: @"";
 }
 
-- (NSString *)artworkSignatureForPlayerViewController:(YTPlayerViewController *)playerViewController {
-    NSString *artworkURL = [self currentArtworkURLForPlayerViewController:playerViewController];
-    if (artworkURL.length == 0) {
-        return @"";
-    }
-
-    NSURL *URL = [NSURL URLWithString:artworkURL];
-    NSString *signature = URL.lastPathComponent.length > 0 ? URL.lastPathComponent : artworkURL;
-    NSRange equalsRange = [signature rangeOfString:@"=" options:NSBackwardsSearch];
-    if (equalsRange.location != NSNotFound) {
-        signature = [signature substringToIndex:equalsRange.location];
-    }
-
-    return [self normalizedString:signature];
-}
-
-- (BOOL)isCurrentTrackPartOfCollection {
+- (BOOL)shouldContinueDownloadingCurrentTrack {
     NSString *currentAlbumTitle = [self explicitAlbumTitleForPlayerViewController:self.playerViewController];
     if (self.explicitAlbumTitle.length > 0 && currentAlbumTitle.length > 0) {
         return [[self normalizedString:currentAlbumTitle] isEqualToString:[self normalizedString:self.explicitAlbumTitle]];
-    }
-
-    NSString *currentArtworkSignature = [self artworkSignatureForPlayerViewController:self.playerViewController];
-    if (self.albumArtworkSignature.length > 0 && currentArtworkSignature.length > 0) {
-        return [currentArtworkSignature isEqualToString:self.albumArtworkSignature];
-    }
-
-    NSString *currentArtist = [self normalizedString:self.playerViewController.playerResponse.playerData.videoDetails.author];
-    if (self.collectionArtist.length > 0 && currentArtist.length > 0) {
-        return [currentArtist isEqualToString:self.collectionArtist];
     }
 
     return YES;
@@ -389,8 +357,7 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
         @"playerResponse.playerData.videoDetails.albumName",
         @"playerResponse.playerData.videoDetails.musicAlbumName",
         @"playerResponse.playerData.album",
-        @"playerResponse.playerData.albumName",
-        @"playerResponse.playerData.subtitle"
+        @"playerResponse.playerData.albumName"
     ] onObject:playerViewController];
 }
 

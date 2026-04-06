@@ -158,7 +158,12 @@
 
     YTMLocalPlayerViewController *playerViewController = [[YTMLocalPlayerViewController alloc] initWithTracks:playbackTracks startIndex:playbackStartIndex];
     UINavigationController *navigationController = [[UINavigationController alloc] initWithRootViewController:playerViewController];
-    navigationController.modalPresentationStyle = UIModalPresentationFullScreen;
+    navigationController.modalPresentationStyle = UIModalPresentationPageSheet;
+    if (@available(iOS 15.0, *)) {
+        navigationController.sheetPresentationController.detents = @[[UISheetPresentationControllerDetent largeDetent]];
+        navigationController.sheetPresentationController.prefersGrabberVisible = YES;
+        navigationController.sheetPresentationController.preferredCornerRadius = 24.0;
+    }
     [self presentViewController:navigationController animated:YES completion:nil];
 }
 

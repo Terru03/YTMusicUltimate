@@ -18,6 +18,18 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
     self.segmentedControl = [[UISegmentedControl alloc] initWithItems:@[@"All Songs", @"Albums & Playlists"]];
     self.segmentedControl.translatesAutoresizingMaskIntoConstraints = NO;
     self.segmentedControl.selectedSegmentIndex = 0;
+    self.segmentedControl.backgroundColor = [[UIColor whiteColor] colorWithAlphaComponent:0.12];
+    self.segmentedControl.selectedSegmentTintColor = [UIColor colorWithRed:0.93 green:0.18 blue:0.29 alpha:1.0];
+    self.segmentedControl.layer.cornerRadius = 12.0;
+    self.segmentedControl.clipsToBounds = YES;
+    [self.segmentedControl setTitleTextAttributes:@{
+        NSForegroundColorAttributeName: [[UIColor whiteColor] colorWithAlphaComponent:0.82],
+        NSFontAttributeName: [UIFont systemFontOfSize:13.0 weight:UIFontWeightSemibold]
+    } forState:UIControlStateNormal];
+    [self.segmentedControl setTitleTextAttributes:@{
+        NSForegroundColorAttributeName: [UIColor whiteColor],
+        NSFontAttributeName: [UIFont systemFontOfSize:13.0 weight:UIFontWeightBold]
+    } forState:UIControlStateSelected];
     [self.segmentedControl addTarget:self action:@selector(segmentChanged:) forControlEvents:UIControlEventValueChanged];
     [self.view addSubview:self.segmentedControl];
 
@@ -61,6 +73,8 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
         [self.label.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:20.0],
         [self.label.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-20.0]
     ]];
+
+    [self.view bringSubviewToFront:self.segmentedControl];
 
     [self refreshLibrary];
 
@@ -387,7 +401,12 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
 
     YTMLocalPlayerViewController *playerViewController = [[YTMLocalPlayerViewController alloc] initWithTracks:playbackTracks startIndex:playbackStartIndex];
     UINavigationController *navigationController = [[UINavigationController alloc] initWithRootViewController:playerViewController];
-    navigationController.modalPresentationStyle = UIModalPresentationFullScreen;
+    navigationController.modalPresentationStyle = UIModalPresentationPageSheet;
+    if (@available(iOS 15.0, *)) {
+        navigationController.sheetPresentationController.detents = @[[UISheetPresentationControllerDetent largeDetent]];
+        navigationController.sheetPresentationController.prefersGrabberVisible = YES;
+        navigationController.sheetPresentationController.preferredCornerRadius = 24.0;
+    }
     [self presentViewController:navigationController animated:YES completion:nil];
 }
 
