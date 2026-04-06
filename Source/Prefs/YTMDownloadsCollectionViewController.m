@@ -36,6 +36,8 @@
     self.tableView.dataSource = self;
     self.tableView.delegate = self;
     self.tableView.backgroundColor = self.view.backgroundColor;
+    self.tableView.contentInset = UIEdgeInsetsMake(0.0, 0.0, 110.0, 0.0);
+    self.tableView.scrollIndicatorInsets = self.tableView.contentInset;
     [self.view addSubview:self.tableView];
 
     [NSLayoutConstraint activateConstraints:@[

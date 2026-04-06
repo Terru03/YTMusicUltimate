@@ -15,6 +15,11 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
 
     self.view.backgroundColor = [UIColor colorWithRed:3/255.0 green:3/255.0 blue:3/255.0 alpha:1.0];
 
+    UIView *segmentedControlContainer = [[UIView alloc] init];
+    segmentedControlContainer.translatesAutoresizingMaskIntoConstraints = NO;
+    segmentedControlContainer.backgroundColor = self.view.backgroundColor;
+    [self.view addSubview:segmentedControlContainer];
+
     self.segmentedControl = [[UISegmentedControl alloc] initWithItems:@[@"All Songs", @"Albums & Playlists"]];
     self.segmentedControl.translatesAutoresizingMaskIntoConstraints = NO;
     self.segmentedControl.selectedSegmentIndex = 0;
@@ -31,13 +36,15 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
         NSFontAttributeName: [UIFont systemFontOfSize:13.0 weight:UIFontWeightBold]
     } forState:UIControlStateSelected];
     [self.segmentedControl addTarget:self action:@selector(segmentChanged:) forControlEvents:UIControlEventValueChanged];
-    [self.view addSubview:self.segmentedControl];
+    [segmentedControlContainer addSubview:self.segmentedControl];
 
     self.tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
     self.tableView.translatesAutoresizingMaskIntoConstraints = NO;
     self.tableView.dataSource = self;
     self.tableView.delegate = self;
     self.tableView.backgroundColor = self.view.backgroundColor;
+    self.tableView.contentInset = UIEdgeInsetsMake(0.0, 0.0, 110.0, 0.0);
+    self.tableView.scrollIndicatorInsets = self.tableView.contentInset;
     [self.view addSubview:self.tableView];
 
     self.imageView = [[UIImageView alloc] initWithImage:[UIImage systemImageNamed:@"music.note.list"]];
@@ -55,11 +62,17 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
     [self.view addSubview:self.label];
 
     [NSLayoutConstraint activateConstraints:@[
-        [self.segmentedControl.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor constant:10.0],
-        [self.segmentedControl.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor constant:16.0],
-        [self.segmentedControl.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-16.0],
+        [segmentedControlContainer.topAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.topAnchor],
+        [segmentedControlContainer.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [segmentedControlContainer.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [segmentedControlContainer.heightAnchor constraintEqualToConstant:52.0],
 
-        [self.tableView.topAnchor constraintEqualToAnchor:self.segmentedControl.bottomAnchor constant:8.0],
+        [self.segmentedControl.topAnchor constraintEqualToAnchor:segmentedControlContainer.topAnchor constant:8.0],
+        [self.segmentedControl.leadingAnchor constraintEqualToAnchor:segmentedControlContainer.leadingAnchor constant:16.0],
+        [self.segmentedControl.trailingAnchor constraintEqualToAnchor:segmentedControlContainer.trailingAnchor constant:-16.0],
+        [self.segmentedControl.heightAnchor constraintEqualToConstant:36.0],
+
+        [self.tableView.topAnchor constraintEqualToAnchor:segmentedControlContainer.bottomAnchor],
         [self.tableView.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
         [self.tableView.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
         [self.tableView.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
@@ -74,7 +87,7 @@ typedef NS_ENUM(NSInteger, YTMDownloadsMode) {
         [self.label.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor constant:-20.0]
     ]];
 
-    [self.view bringSubviewToFront:self.segmentedControl];
+    [self.view bringSubviewToFront:segmentedControlContainer];
 
     [self refreshLibrary];
 

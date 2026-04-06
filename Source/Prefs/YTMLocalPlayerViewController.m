@@ -39,8 +39,11 @@
 
     [self buildInterface];
 
-    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playbackStateDidChange:) name:YTMLocalPlaybackManagerDidUpdateNotification object:[YTMLocalPlaybackManager sharedInstance]];
-    [[YTMLocalPlaybackManager sharedInstance] loadTracks:self.tracks startIndex:self.startIndex autoplay:YES];
+    YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
+    [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(playbackStateDidChange:) name:YTMLocalPlaybackManagerDidUpdateNotification object:manager];
+    if (![manager hasActiveSession] || ![manager isManagingTracks:self.tracks] || manager.currentIndex != self.startIndex) {
+        [manager loadTracks:self.tracks startIndex:self.startIndex autoplay:YES];
+    }
     [self refreshInterface];
 }
 
@@ -312,7 +315,7 @@
     self.previousButton.enabled = canGoBack;
     self.previousButton.alpha = canGoBack ? 1.0 : 0.45;
 
-    BOOL canGoNext = manager.currentIndex != NSNotFound && manager.currentIndex + 1 < manager.tracks.count;
+    BOOL canGoNext = manager.tracks.count > 0;
     self.nextButton.enabled = canGoNext;
     self.nextButton.alpha = canGoNext ? 1.0 : 0.45;
 }

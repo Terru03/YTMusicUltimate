@@ -29,6 +29,7 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
 @property (nonatomic) NSInteger currentRelativeTrackNumber;
 @property (nonatomic) NSInteger downloadedTrackCount;
 @property (nonatomic, strong) NSMutableOrderedSet<NSString *> *downloadedVideoIDs;
+@property (nonatomic) UIBackgroundTaskIdentifier backgroundTaskIdentifier;
 @property (nonatomic, assign, getter=isDownloadingAlbum) BOOL downloadingAlbum;
 @end
 
@@ -41,6 +42,14 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
         sharedInstance = [[self alloc] init];
     });
     return sharedInstance;
+}
+
+- (instancetype)init {
+    self = [super init];
+    if (self) {
+        _backgroundTaskIdentifier = UIBackgroundTaskInvalid;
+    }
+    return self;
 }
 
 - (void)downloadAlbumFromNowPlayingController:(YTMNowPlayingViewController *)nowPlayingController
@@ -71,6 +80,7 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     self.currentRelativeTrackNumber = 0;
     self.downloadedTrackCount = 0;
     self.downloadedVideoIDs = [NSMutableOrderedSet orderedSet];
+    [self beginBackgroundTask];
 
     __weak typeof(self) weakSelf = self;
     [self downloadCurrentTrackWithCompletion:^(BOOL success, BOOL cancelled) {
@@ -84,7 +94,9 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
             return;
         }
 
-        [self downloadNextTracks];
+        [self scheduleContinuation:^{
+            [self downloadNextTracks];
+        }];
     }];
 }
 
@@ -113,7 +125,9 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
                 return;
             }
 
-            [self downloadNextTracks];
+            [self scheduleContinuation:^{
+                [self downloadNextTracks];
+            }];
         }];
     }];
 }
@@ -143,7 +157,9 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
                 return;
             }
 
-            [self downloadPreviousTracks];
+            [self scheduleContinuation:^{
+                [self downloadPreviousTracks];
+            }];
         }];
     }];
 }
@@ -228,13 +244,21 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
 
 - (void)performNavigationInDirection:(YTMAlbumDownloadDirection)direction {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (direction == YTMAlbumDownloadDirectionBackward) {
-            [self.playerViewController seekToTime:0.0];
-            [self.nowPlayingController didTapPrevButton];
+        if (!self.nowPlayingController || !self.playerViewController) {
             return;
         }
 
-        [self.nowPlayingController didTapNextButton];
+        @try {
+            if (direction == YTMAlbumDownloadDirectionBackward) {
+                [self.playerViewController seekToTime:0.0];
+                [self.nowPlayingController didTapPrevButton];
+                return;
+            }
+
+            [self.nowPlayingController didTapNextButton];
+        } @catch (__unused NSException *exception) {
+            [self finalizeAlbumDownload];
+        }
     });
 }
 
@@ -310,6 +334,7 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
     self.downloadedTrackCount = 0;
     self.downloadedVideoIDs = nil;
     self.downloadingAlbum = NO;
+    [self endBackgroundTask];
 }
 
 - (NSString *)currentArtworkURLForPlayerViewController:(YTPlayerViewController *)playerViewController {
@@ -354,6 +379,7 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
 - (NSString *)explicitAlbumTitleForPlayerViewController:(YTPlayerViewController *)playerViewController {
     return [self stringValueForKeyPaths:@[
         @"playerResponse.playerData.videoDetails.album",
+        @"playerResponse.playerData.videoDetails.albumTitle",
         @"playerResponse.playerData.videoDetails.albumName",
         @"playerResponse.playerData.videoDetails.musicAlbumName",
         @"playerResponse.playerData.album",
@@ -444,6 +470,45 @@ typedef NS_ENUM(NSInteger, YTMAlbumDownloadDirection) {
 
         [self waitForTrackReadinessFromVideoID:videoID attempt:attempt + 1 completion:completion];
     });
+}
+
+- (void)scheduleContinuation:(dispatch_block_t)continuation {
+    if (!continuation) {
+        return;
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.75 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!self.isDownloadingAlbum) {
+            return;
+        }
+
+        continuation();
+    });
+}
+
+- (void)beginBackgroundTask {
+    if (self.backgroundTaskIdentifier != UIBackgroundTaskInvalid) {
+        return;
+    }
+
+    __weak typeof(self) weakSelf = self;
+    self.backgroundTaskIdentifier = [[UIApplication sharedApplication] beginBackgroundTaskWithName:@"YTMusicUltimateAlbumDownload" expirationHandler:^{
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) {
+            return;
+        }
+
+        [self finalizeAlbumDownload];
+    }];
+}
+
+- (void)endBackgroundTask {
+    if (self.backgroundTaskIdentifier == UIBackgroundTaskInvalid) {
+        return;
+    }
+
+    [[UIApplication sharedApplication] endBackgroundTask:self.backgroundTaskIdentifier];
+    self.backgroundTaskIdentifier = UIBackgroundTaskInvalid;
 }
 
 @end

@@ -10,6 +10,8 @@ extern NSString *const YTMLocalPlaybackManagerDidUpdateNotification;
 @property (nonatomic, readonly, getter=isPlaying) BOOL playing;
 
 + (instancetype)sharedInstance;
+- (BOOL)hasActiveSession;
+- (BOOL)isManagingTracks:(NSArray<NSDictionary *> *)tracks;
 - (void)loadTracks:(NSArray<NSDictionary *> *)tracks startIndex:(NSInteger)startIndex autoplay:(BOOL)autoplay;
 - (NSDictionary *)currentTrack;
 - (NSTimeInterval)currentTime;
@@ -20,4 +22,5 @@ extern NSString *const YTMLocalPlaybackManagerDidUpdateNotification;
 - (void)playNextTrack;
 - (void)playPreviousTrackOrRestart;
 - (void)seekToTime:(NSTimeInterval)time completion:(dispatch_block_t)completion;
+- (void)presentPlayerInterfaceAnimated:(BOOL)animated;
 @end
