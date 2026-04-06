@@ -1,8 +1,10 @@
+#import "Headers/YTMBrowseViewController.h"
 #import "Headers/YTPivotBarView.h"
 #import "Headers/YTIPivotBarSupportedRenderers.h"
 #import "Headers/YTAssetLoader.h"
 #import "Headers/Localization.h"
 #import "Utils/NSBundle+YTMU.h"
+#import "Prefs/YTMDownloads.h"
 
 static BOOL YTMU(NSString *key) {
     NSDictionary *YTMUltimateDict = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"YTMUltimate"];
@@ -35,7 +37,7 @@ static BOOL YTMU(NSString *key) {
         }
 
         YTIBrowseEndpoint *ytmuBrowseEndpoint = [%c(YTIBrowseEndpoint) new];
-        ytmuBrowseEndpoint.browseId = @"FEmusic_offline";
+        ytmuBrowseEndpoint.browseId = @"FEytmu_downloads";
 
         YTICommand *ytmuCommand = [%c(YTICommand) new];
         ytmuCommand.browseEndpoint = ytmuBrowseEndpoint;
@@ -47,7 +49,7 @@ static BOOL YTMU(NSString *key) {
         ytmuAccessibility.accessibilityData = ytmuData;
 
         YTIPivotBarItemRenderer *barItem = [[%c(YTIPivotBarItemRenderer) alloc] init];
-        barItem.pivotIdentifier = @"FEmusic_offline";
+        barItem.pivotIdentifier = @"FEytmu_downloads";
         barItem.targetId = @"pivot-ytmu-downloads";
         barItem.title = [%c(YTIFormattedString) formattedStringWithString:LOC(@"DOWNLOADS")];
         barItem.icon = ytmuIcon;
@@ -61,5 +63,32 @@ static BOOL YTMU(NSString *key) {
     }
 
     %orig(renderer);
+}
+%end
+
+%hook YTMBrowseViewController
+- (void)viewDidLoad {
+    %orig;
+
+    if (YTMU(@"YTMUltimateIsEnabled") && !YTMU(@"hideDownloadsTab")) {
+        YTICommand *navEndpoint = nil;
+
+        if (class_getInstanceVariable([self class], "_navEndpoint") != NULL) {
+            navEndpoint = [self valueForKey:@"_navEndpoint"];
+        }
+
+        if (class_getInstanceVariable([self class], "_navigationEndpoint") != NULL) {
+            navEndpoint = [self valueForKey:@"_navigationEndpoint"];
+        }
+
+        if (navEndpoint && [navEndpoint.browseEndpoint.browseId isEqualToString:@"FEytmu_downloads"]) {
+            YTMDownloads *ytmuDownloadsVC = [[YTMDownloads alloc] init];
+            [self addChildViewController:ytmuDownloadsVC];
+            [ytmuDownloadsVC.view setFrame:CGRectMake(0.0f, 0.0f, self.view.frame.size.width, self.view.frame.size.height)];
+            [self.view addSubview:ytmuDownloadsVC.view];
+            [self.view endEditing:YES];
+            [ytmuDownloadsVC didMoveToParentViewController:self];
+        }
+    }
 }
 %end

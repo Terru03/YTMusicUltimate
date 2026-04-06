@@ -15,6 +15,11 @@
 #import "Prefs/YTMDownloadStore.h"
 #import "YTMBatchDownloadManager.h"
 
+static BOOL YTMU(NSString *key) {
+    NSDictionary *YTMUltimateDict = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"YTMUltimate"];
+    return [YTMUltimateDict[key] boolValue];
+}
+
 @interface UIView ()
 - (UIViewController *)_viewControllerForAncestor;
 @end
@@ -91,7 +96,46 @@ static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *
         return %orig;
     }
 
-    return %orig;
+    YTMNowPlayingViewController *playingVC = (YTMNowPlayingViewController *)tapRecognizer.view._viewControllerForAncestor;
+    YTMWatchViewController *watchVC = (YTMWatchViewController *)playingVC.parentViewController;
+    YTPlayerViewController *playerVC = watchVC.playerViewController;
+    YTPlayerResponse *playerResponse = playerVC.playerResponse;
+
+    if (!playerResponse) {
+        YTAlertView *alertView = [%c(YTAlertView) infoDialog];
+        alertView.title = LOC(@"DONT_RUSH");
+        alertView.subtitle = LOC(@"DONT_RUSH_DESC");
+        [alertView show];
+        return;
+    }
+
+    YTMActionSheetController *sheetController = [%c(YTMActionSheetController) musicActionSheetController];
+    sheetController.sourceView = tapRecognizer.view;
+    [sheetController addHeaderWithTitle:LOC(@"SELECT_ACTION") subtitle:nil];
+
+    if (YTMU(@"downloadAudio")) {
+        [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_AUDIO") iconImage:[%c(YTUIResources) audioOutline] style:0 handler:^ {
+            [self downloadAudio:playerVC];
+        }]];
+    }
+
+    if (YTMU(@"downloadCoverImage")) {
+        [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_COVER") iconImage:[%c(YTUIResources) outlineImageWithColor:[UIColor whiteColor]] style:0 handler:^ {
+            [self downloadCoverImage:playerVC];
+        }]];
+    }
+
+    [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_PREMIUM") iconImage:[%c(YTUIResources) downloadOutline] secondaryIconImage:[%c(YTUIResources) youtubePremiumBadgeLight] accessibilityIdentifier:nil handler:^ {
+        return %orig;
+    }]];
+
+    if (YTMU(@"downloadAudio")) {
+        [sheetController presentFromViewController:playingVC animated:YES completion:nil];
+    } else if (YTMU(@"downloadCoverImage")) {
+        [self downloadCoverImage:playerVC];
+    } else {
+        return %orig;
+    }
 }
 
 %new
