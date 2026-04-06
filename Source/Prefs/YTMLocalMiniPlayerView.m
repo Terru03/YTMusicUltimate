@@ -63,6 +63,18 @@
         tapGestureRecognizer.cancelsTouchesInView = NO;
         [self addGestureRecognizer:tapGestureRecognizer];
 
+        UISwipeGestureRecognizer *nextSwipeRecognizer = [[UISwipeGestureRecognizer alloc] initWithTarget:self action:@selector(didSwipeToNext)];
+        nextSwipeRecognizer.direction = UISwipeGestureRecognizerDirectionLeft;
+        nextSwipeRecognizer.delegate = self;
+        nextSwipeRecognizer.cancelsTouchesInView = NO;
+        [self addGestureRecognizer:nextSwipeRecognizer];
+
+        UISwipeGestureRecognizer *previousSwipeRecognizer = [[UISwipeGestureRecognizer alloc] initWithTarget:self action:@selector(didSwipeToPrevious)];
+        previousSwipeRecognizer.direction = UISwipeGestureRecognizerDirectionRight;
+        previousSwipeRecognizer.delegate = self;
+        previousSwipeRecognizer.cancelsTouchesInView = NO;
+        [self addGestureRecognizer:previousSwipeRecognizer];
+
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handlePlaybackStateDidChange:) name:YTMLocalPlaybackManagerDidUpdateNotification object:[YTMLocalPlaybackManager sharedInstance]];
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleApplicationDidBecomeActive:) name:UIApplicationDidBecomeActiveNotification object:nil];
     }
@@ -124,7 +136,9 @@
     dispatch_async(dispatch_get_main_queue(), ^{
         YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
         NSDictionary *track = [manager currentTrack];
-        BOOL visible = ([manager hasActiveSession] && track != nil);
+        BOOL visible = ([manager hasActiveSession] &&
+                        track != nil &&
+                        !manager.isPlayerInterfaceVisible);
 
         if (!visible) {
             self.hidden = YES;
@@ -179,6 +193,14 @@
 
 - (void)didTapMiniPlayer {
     [[YTMLocalPlaybackManager sharedInstance] presentPlayerInterfaceAnimated:YES];
+}
+
+- (void)didSwipeToNext {
+    [[YTMLocalPlaybackManager sharedInstance] playNextTrack];
+}
+
+- (void)didSwipeToPrevious {
+    [[YTMLocalPlaybackManager sharedInstance] playPreviousTrackOrRestart];
 }
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {

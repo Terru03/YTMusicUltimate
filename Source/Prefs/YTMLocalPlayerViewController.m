@@ -2,7 +2,7 @@
 #import <math.h>
 #import "YTMLocalPlaybackManager.h"
 
-@interface YTMLocalPlayerViewController ()
+@interface YTMLocalPlayerViewController () <UIGestureRecognizerDelegate>
 @property (nonatomic, copy) NSArray<NSDictionary *> *tracks;
 @property (nonatomic) NSInteger startIndex;
 @property (nonatomic, strong) UIImageView *artworkView;
@@ -45,6 +45,16 @@
         [manager loadTracks:self.tracks startIndex:self.startIndex autoplay:YES];
     }
     [self refreshInterface];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    [super viewDidAppear:animated];
+    [[YTMLocalPlaybackManager sharedInstance] playerInterfaceDidAppear];
+}
+
+- (void)viewDidDisappear:(BOOL)animated {
+    [super viewDidDisappear:animated];
+    [[YTMLocalPlaybackManager sharedInstance] playerInterfaceDidDisappear];
 }
 
 - (void)dealloc {
@@ -99,25 +109,31 @@
     self.artworkView.clipsToBounds = YES;
     self.artworkView.layer.cornerRadius = 22.0;
     [stackView addArrangedSubview:self.artworkView];
-    [[self.artworkView.heightAnchor constraintEqualToConstant:300.0] setActive:YES];
+    [[self.artworkView.heightAnchor constraintEqualToConstant:320.0] setActive:YES];
 
     self.titleLabel = [[UILabel alloc] init];
     self.titleLabel.textColor = [UIColor whiteColor];
     self.titleLabel.font = [UIFont boldSystemFontOfSize:28.0];
-    self.titleLabel.numberOfLines = 2;
+    self.titleLabel.numberOfLines = 1;
+    self.titleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [stackView addArrangedSubview:self.titleLabel];
+    [[self.titleLabel.heightAnchor constraintEqualToConstant:34.0] setActive:YES];
 
     self.subtitleLabel = [[UILabel alloc] init];
     self.subtitleLabel.textColor = [[UIColor whiteColor] colorWithAlphaComponent:0.78];
     self.subtitleLabel.font = [UIFont systemFontOfSize:18.0 weight:UIFontWeightMedium];
-    self.subtitleLabel.numberOfLines = 2;
+    self.subtitleLabel.numberOfLines = 1;
+    self.subtitleLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [stackView addArrangedSubview:self.subtitleLabel];
+    [[self.subtitleLabel.heightAnchor constraintEqualToConstant:24.0] setActive:YES];
 
     self.collectionLabel = [[UILabel alloc] init];
     self.collectionLabel.textColor = [[UIColor whiteColor] colorWithAlphaComponent:0.56];
     self.collectionLabel.font = [UIFont systemFontOfSize:14.0 weight:UIFontWeightSemibold];
-    self.collectionLabel.numberOfLines = 2;
+    self.collectionLabel.numberOfLines = 1;
+    self.collectionLabel.lineBreakMode = NSLineBreakByTruncatingTail;
     [stackView addArrangedSubview:self.collectionLabel];
+    [[self.collectionLabel.heightAnchor constraintEqualToConstant:20.0] setActive:YES];
 
     UIView *sliderContainer = [[UIView alloc] init];
     [stackView addArrangedSubview:sliderContainer];
@@ -185,8 +201,21 @@
     self.queueLabel.textColor = [[UIColor whiteColor] colorWithAlphaComponent:0.72];
     self.queueLabel.font = [UIFont systemFontOfSize:15.0 weight:UIFontWeightSemibold];
     self.queueLabel.textAlignment = NSTextAlignmentCenter;
-    self.queueLabel.numberOfLines = 0;
+    self.queueLabel.numberOfLines = 1;
     [stackView addArrangedSubview:self.queueLabel];
+    [[self.queueLabel.heightAnchor constraintEqualToConstant:20.0] setActive:YES];
+
+    UISwipeGestureRecognizer *nextSwipeRecognizer = [[UISwipeGestureRecognizer alloc] initWithTarget:self action:@selector(didSwipeToNext)];
+    nextSwipeRecognizer.direction = UISwipeGestureRecognizerDirectionLeft;
+    nextSwipeRecognizer.delegate = self;
+    nextSwipeRecognizer.cancelsTouchesInView = NO;
+    [self.view addGestureRecognizer:nextSwipeRecognizer];
+
+    UISwipeGestureRecognizer *previousSwipeRecognizer = [[UISwipeGestureRecognizer alloc] initWithTarget:self action:@selector(didSwipeToPrevious)];
+    previousSwipeRecognizer.direction = UISwipeGestureRecognizerDirectionRight;
+    previousSwipeRecognizer.delegate = self;
+    previousSwipeRecognizer.cancelsTouchesInView = NO;
+    [self.view addGestureRecognizer:previousSwipeRecognizer];
 }
 
 - (UIButton *)controlButtonWithSystemName:(NSString *)systemName pointSize:(CGFloat)pointSize selector:(SEL)selector {
@@ -276,6 +305,14 @@
     [[YTMLocalPlaybackManager sharedInstance] playNextTrack];
 }
 
+- (void)didSwipeToNext {
+    [[YTMLocalPlaybackManager sharedInstance] playNextTrack];
+}
+
+- (void)didSwipeToPrevious {
+    [[YTMLocalPlaybackManager sharedInstance] playPreviousTrackOrRestart];
+}
+
 - (void)sliderTouchDown:(UISlider *)slider {
     self.scrubbing = YES;
 }
@@ -331,6 +368,17 @@
     UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:30.0 weight:UIImageSymbolWeightSemibold];
     UIImage *image = [[UIImage systemImageNamed:systemName] imageWithConfiguration:configuration];
     [self.playPauseButton setImage:image forState:UIControlStateNormal];
+}
+
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch {
+    if ([touch.view isDescendantOfView:self.progressSlider] ||
+        [touch.view isDescendantOfView:self.previousButton] ||
+        [touch.view isDescendantOfView:self.playPauseButton] ||
+        [touch.view isDescendantOfView:self.nextButton]) {
+        return NO;
+    }
+
+    return YES;
 }
 
 @end

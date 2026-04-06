@@ -8,6 +8,7 @@ extern NSString *const YTMLocalPlaybackManagerDidUpdateNotification;
 @property (nonatomic, copy, readonly) NSArray<NSDictionary *> *tracks;
 @property (nonatomic, readonly) NSInteger currentIndex;
 @property (nonatomic, readonly, getter=isPlaying) BOOL playing;
+@property (nonatomic, readonly, getter=isPlayerInterfaceVisible) BOOL playerInterfaceVisible;
 
 + (instancetype)sharedInstance;
 - (BOOL)hasActiveSession;
@@ -23,5 +24,7 @@ extern NSString *const YTMLocalPlaybackManagerDidUpdateNotification;
 - (void)playPreviousTrackOrRestart;
 - (void)seekToTime:(NSTimeInterval)time completion:(dispatch_block_t)completion;
 - (void)presentPlayerInterfaceAnimated:(BOOL)animated;
+- (void)playerInterfaceDidAppear;
+- (void)playerInterfaceDidDisappear;
 - (void)stopAndClearSession;
 @end

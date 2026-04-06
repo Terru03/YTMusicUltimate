@@ -11,6 +11,7 @@ NSString *const YTMLocalPlaybackManagerDidUpdateNotification = @"YTMLocalPlaybac
 @property (nonatomic, strong, readwrite) AVPlayer *player;
 @property (nonatomic, copy, readwrite) NSArray<NSDictionary *> *tracks;
 @property (nonatomic, readwrite) NSInteger currentIndex;
+@property (nonatomic, readwrite, getter=isPlayerInterfaceVisible) BOOL playerInterfaceVisible;
 @property (nonatomic, strong) id timeObserverToken;
 @property (nonatomic, strong) id nowPlayingSession;
 @property (nonatomic, strong) MPRemoteCommandCenter *remoteCommandCenter;
@@ -35,6 +36,7 @@ NSString *const YTMLocalPlaybackManagerDidUpdateNotification = @"YTMLocalPlaybac
         _tracks = @[];
         _currentIndex = NSNotFound;
         _nowPlayingInfoCenter = [MPNowPlayingInfoCenter defaultCenter];
+        _playerInterfaceVisible = NO;
 
         [[NSNotificationCenter defaultCenter] addObserver:self selector:@selector(handleApplicationDidBecomeActive:) name:UIApplicationDidBecomeActiveNotification object:nil];
     }
@@ -257,8 +259,24 @@ NSString *const YTMLocalPlaybackManagerDidUpdateNotification = @"YTMLocalPlaybac
             navigationController.sheetPresentationController.preferredCornerRadius = 24.0;
         }
 
+        self.playerInterfaceVisible = YES;
+        [self notifyStateChanged];
         [topViewController presentViewController:navigationController animated:animated completion:nil];
     });
+}
+
+- (void)playerInterfaceDidAppear {
+    self.playerInterfaceVisible = YES;
+    [self notifyStateChanged];
+}
+
+- (void)playerInterfaceDidDisappear {
+    if (!self.playerInterfaceVisible) {
+        return;
+    }
+
+    self.playerInterfaceVisible = NO;
+    [self notifyStateChanged];
 }
 
 - (void)loadTrackAtIndex:(NSInteger)index autoplay:(BOOL)autoplay {

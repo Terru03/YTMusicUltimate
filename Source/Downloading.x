@@ -117,6 +117,12 @@ static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *
         [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_AUDIO") iconImage:[%c(YTUIResources) audioOutline] style:0 handler:^ {
             [self downloadAudio:playerVC];
         }]];
+
+        [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:@"Download album / queue" iconImage:[%c(YTUIResources) downloadOutline] style:0 handler:^ {
+            [[YTMBatchDownloadManager sharedInstance] downloadAlbumFromNowPlayingController:playingVC playerViewController:playerVC trackDownloader:^(YTPlayerViewController *currentPlayerVC, NSDictionary *collectionInfo, YTMTrackDownloadCompletion completion) {
+                [self downloadAudio:currentPlayerVC collectionInfo:collectionInfo completion:completion];
+            }];
+        }]];
     }
 
     if (YTMU(@"downloadCoverImage")) {
