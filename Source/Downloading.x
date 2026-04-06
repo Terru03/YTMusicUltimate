@@ -164,6 +164,7 @@ static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *
     ffmpeg.tempName = playerVC.contentVideoID ?: [NSUUID UUID].UUIDString;
     ffmpeg.mediaName = [NSString stringWithFormat:@"%@ - %@", author, title];
     ffmpeg.duration = MAX(1, round(playerVC.currentVideoTotalMediaTime));
+    NSString *downloadedAudioFileName = [NSString stringWithFormat:@"%@.m4a", ffmpeg.mediaName];
 
     
     NSString *extractedURL = [self getURLFromManifest:[NSURL URLWithString:urlStr]];
@@ -172,7 +173,7 @@ static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *
         ffmpeg.completion = ^(YTMFFMpegDownloadResult result) {
             if (result == YTMFFMpegDownloadResultSuccess) {
                 YTMUSaveCoverForPlayerResponse(playerResponse, author, title);
-                [YTMDownloadStore saveMetadata:YTMUMetadataForDownloadedTrack(author, title, collectionInfo) forAudioFileNamed:[NSString stringWithFormat:@"%@.m4a", ffmpeg.mediaName]];
+                [YTMDownloadStore saveMetadata:YTMUMetadataForDownloadedTrack(author, title, collectionInfo) forAudioFileNamed:downloadedAudioFileName];
             }
 
             if (completion) {
