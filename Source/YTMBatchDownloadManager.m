@@ -370,7 +370,9 @@
     if (watchViewController && [watchViewController respondsToSelector:@selector(playerViewController)]) {
         @try {
             id resolvedPlayerViewController = [watchViewController valueForKey:@"playerViewController"];
-            if ([resolvedPlayerViewController isKindOfClass:[YTPlayerViewController class]]) {
+            if (resolvedPlayerViewController &&
+                [resolvedPlayerViewController respondsToSelector:@selector(contentVideoID)] &&
+                [resolvedPlayerViewController respondsToSelector:@selector(playerResponse)]) {
                 return resolvedPlayerViewController;
             }
         } @catch (__unused NSException *exception) {
