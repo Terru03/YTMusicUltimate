@@ -17,6 +17,9 @@
 @property (nonatomic, strong) UIButton *playPauseButton;
 @property (nonatomic, strong) UIButton *nextButton;
 @property (nonatomic) BOOL scrubbing;
+@property (nonatomic) NSInteger displayedTrackIndex;
+@property (nonatomic) NSInteger pendingTrackAnimationDirection;
+@property (nonatomic) BOOL animatingTrackTransition;
 @end
 
 @implementation YTMLocalPlayerViewController
@@ -26,6 +29,7 @@
     if (self) {
         _tracks = [tracks copy] ?: @[];
         _startIndex = MAX(0, MIN(startIndex, (NSInteger)_tracks.count - 1));
+        _displayedTrackIndex = NSNotFound;
     }
     return self;
 }
@@ -44,6 +48,7 @@
     if (![manager hasActiveSession] || ![manager isManagingTracks:self.tracks] || manager.currentIndex != self.startIndex) {
         [manager loadTracks:self.tracks startIndex:self.startIndex autoplay:YES];
     }
+    self.displayedTrackIndex = manager.currentIndex;
     [self refreshInterface];
 }
 
@@ -233,18 +238,28 @@
         return;
     }
 
-    if (![[YTMLocalPlaybackManager sharedInstance] hasActiveSession]) {
+    YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
+    if (![manager hasActiveSession]) {
         [self closeController];
         return;
     }
 
-    if (!self.scrubbing) {
+    if (manager.currentIndex != self.displayedTrackIndex) {
+        [self animateTrackTransitionFromIndex:self.displayedTrackIndex toIndex:manager.currentIndex manager:manager];
+        return;
+    }
+
+    if (!self.scrubbing && !self.animatingTrackTransition) {
         [self refreshInterface];
     }
 }
 
 - (void)refreshInterface {
     YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
+    [self applyTrackFromManager:manager];
+}
+
+- (void)applyTrackFromManager:(YTMLocalPlaybackManager *)manager {
     NSDictionary *track = [manager currentTrack];
     if (!track) {
         return;
@@ -270,6 +285,79 @@
     [self updateTimeLabelsForCurrentTime:currentTime duration:duration];
     [self updateNavigationButtons];
     [self updatePlayPauseButton];
+    self.displayedTrackIndex = manager.currentIndex;
+}
+
+- (NSArray<UIView *> *)trackTransitionViews {
+    return @[self.artworkView, self.titleLabel, self.subtitleLabel, self.collectionLabel, self.queueLabel];
+}
+
+- (NSInteger)resolvedAnimationDirectionFromIndex:(NSInteger)previousIndex
+                                         toIndex:(NSInteger)newIndex
+                                        trackCount:(NSInteger)trackCount {
+    if (self.pendingTrackAnimationDirection != 0) {
+        NSInteger direction = self.pendingTrackAnimationDirection;
+        self.pendingTrackAnimationDirection = 0;
+        return direction;
+    }
+
+    if (previousIndex == NSNotFound || newIndex == NSNotFound || trackCount <= 1) {
+        return 0;
+    }
+
+    if (((previousIndex + 1) % trackCount) == newIndex) {
+        return 1;
+    }
+
+    if (((previousIndex - 1 + trackCount) % trackCount) == newIndex) {
+        return -1;
+    }
+
+    return newIndex > previousIndex ? 1 : -1;
+}
+
+- (void)animateTrackTransitionFromIndex:(NSInteger)previousIndex
+                                toIndex:(NSInteger)newIndex
+                                manager:(YTMLocalPlaybackManager *)manager {
+    NSInteger direction = [self resolvedAnimationDirectionFromIndex:previousIndex toIndex:newIndex trackCount:manager.tracks.count];
+    if (direction == 0 || self.view.window == nil || self.animatingTrackTransition) {
+        [self applyTrackFromManager:manager];
+        return;
+    }
+
+    self.animatingTrackTransition = YES;
+    NSArray<UIView *> *transitionViews = [self trackTransitionViews];
+    CGFloat offset = MIN(120.0, CGRectGetWidth(self.view.bounds) * 0.22);
+    CGFloat outgoingOffset = direction > 0 ? -offset : offset;
+    CGFloat incomingOffset = -outgoingOffset;
+
+    [UIView animateWithDuration:0.18 delay:0.0 options:UIViewAnimationOptionCurveEaseIn animations:^{
+        for (UIView *view in transitionViews) {
+            view.transform = CGAffineTransformMakeTranslation(outgoingOffset, 0.0);
+            view.alpha = 0.0;
+        }
+    } completion:^(__unused BOOL finished) {
+        [self applyTrackFromManager:manager];
+
+        for (UIView *view in transitionViews) {
+            view.transform = CGAffineTransformMakeTranslation(incomingOffset, 0.0);
+            view.alpha = 0.0;
+        }
+
+        [UIView animateWithDuration:0.28
+                              delay:0.0
+             usingSpringWithDamping:0.88
+              initialSpringVelocity:0.15
+                            options:UIViewAnimationOptionCurveEaseOut
+                         animations:^{
+            for (UIView *view in transitionViews) {
+                view.transform = CGAffineTransformIdentity;
+                view.alpha = 1.0;
+            }
+        } completion:^(__unused BOOL innerFinished) {
+            self.animatingTrackTransition = NO;
+        }];
+    }];
 }
 
 - (UIImage *)artworkImageForTrack:(NSDictionary *)track {
@@ -294,6 +382,9 @@
 }
 
 - (void)didTapPrevious {
+    YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
+    NSTimeInterval currentTime = [manager currentTime];
+    self.pendingTrackAnimationDirection = (currentTime > 3.0 || manager.currentIndex == 0 || manager.currentIndex == NSNotFound) ? 0 : -1;
     [[YTMLocalPlaybackManager sharedInstance] playPreviousTrackOrRestart];
 }
 
@@ -302,14 +393,19 @@
 }
 
 - (void)didTapNext {
+    self.pendingTrackAnimationDirection = 1;
     [[YTMLocalPlaybackManager sharedInstance] playNextTrack];
 }
 
 - (void)didSwipeToNext {
+    self.pendingTrackAnimationDirection = 1;
     [[YTMLocalPlaybackManager sharedInstance] playNextTrack];
 }
 
 - (void)didSwipeToPrevious {
+    YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
+    NSTimeInterval currentTime = [manager currentTime];
+    self.pendingTrackAnimationDirection = (currentTime > 3.0 || manager.currentIndex == 0 || manager.currentIndex == NSNotFound) ? 0 : -1;
     [[YTMLocalPlaybackManager sharedInstance] playPreviousTrackOrRestart];
 }
 

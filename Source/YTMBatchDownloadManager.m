@@ -2,6 +2,7 @@
 #import "Headers/Localization.h"
 #import "Headers/YTMNowPlayingViewController.h"
 #import "Headers/YTMToastController.h"
+#import "Headers/YTMWatchViewController.h"
 #import "Headers/YTPlayerResponse.h"
 #import "Headers/YTPlayerViewController.h"
 #import "Headers/YTIPlayerResponse.h"
@@ -93,36 +94,45 @@
     }
 
     __weak typeof(self) weakSelf = self;
-    [self moveToNextTrackWithCompletion:^(BOOL moved) {
+    [self scheduleAfterDownloadCompletion:^{
         __strong typeof(weakSelf) self = weakSelf;
-        if (!self || !moved) {
-            [self finalizeAlbumDownload];
+        if (!self) {
             return;
         }
 
-        self.currentTrackNumber += 1;
-        [self scheduleContinuation:^{
-            [self downloadCurrentTrackWithCompletion:^(BOOL success, BOOL cancelled) {
-                if (!success || cancelled) {
-                    [self finalizeAlbumDownload];
-                    return;
-                }
+        [self moveToNextTrackWithCompletion:^(BOOL moved) {
+            __strong typeof(weakSelf) self = weakSelf;
+            if (!self || !moved) {
+                [self finalizeAlbumDownload];
+                return;
+            }
 
-                [self continueDownloadingQueue];
+            self.currentTrackNumber += 1;
+            [self scheduleBeforeDownloadingLoadedTrack:^{
+                [self downloadCurrentTrackWithCompletion:^(BOOL success, BOOL cancelled) {
+                    if (!success || cancelled) {
+                        [self finalizeAlbumDownload];
+                        return;
+                    }
+
+                    [self continueDownloadingQueue];
+                }];
             }];
         }];
     }];
 }
 
 - (void)downloadCurrentTrackWithCompletion:(YTMTrackDownloadCompletion)completion {
-    if (!self.isDownloadingAlbum || !self.trackDownloader || !self.playerViewController) {
+    YTPlayerViewController *currentPlayerViewController = [self activePlayerViewController];
+    if (!self.isDownloadingAlbum || !self.trackDownloader || !currentPlayerViewController) {
         if (completion) {
             completion(NO, NO);
         }
         return;
     }
 
-    NSString *currentVideoID = self.playerViewController.contentVideoID;
+    self.playerViewController = currentPlayerViewController;
+    NSString *currentVideoID = currentPlayerViewController.contentVideoID;
     if (currentVideoID.length == 0) {
         if (completion) {
             completion(NO, NO);
@@ -140,7 +150,7 @@
     [self.downloadedVideoIDs addObject:currentVideoID];
 
     __weak typeof(self) weakSelf = self;
-    self.trackDownloader(self.playerViewController, [self currentCollectionInfo], ^(BOOL success, BOOL cancelled) {
+    self.trackDownloader(currentPlayerViewController, [self currentCollectionInfo], ^(BOOL success, BOOL cancelled) {
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) {
             return;
@@ -157,7 +167,8 @@
 }
 
 - (void)moveToNextTrackWithCompletion:(void (^)(BOOL moved))completion {
-    NSString *currentVideoID = self.playerViewController.contentVideoID;
+    YTPlayerViewController *currentPlayerViewController = [self activePlayerViewController];
+    NSString *currentVideoID = currentPlayerViewController.contentVideoID;
     if (!self.isDownloadingAlbum || currentVideoID.length == 0) {
         if (completion) {
             completion(NO);
@@ -165,10 +176,11 @@
         return;
     }
 
+    self.playerViewController = currentPlayerViewController;
     [self performNavigationToNextTrack];
 
     __weak typeof(self) weakSelf = self;
-    [self waitForTrackReadinessFromVideoID:currentVideoID attempt:0 completion:^(BOOL changed) {
+    [self waitForTrackReadinessFromVideoID:currentVideoID attempt:0 readyPassCount:0 completion:^(BOOL changed) {
         __strong typeof(weakSelf) self = weakSelf;
         if (!self || !changed) {
             if (completion) {
@@ -177,7 +189,9 @@
             return;
         }
 
-        NSString *newVideoID = self.playerViewController.contentVideoID;
+        YTPlayerViewController *loadedPlayerViewController = [self activePlayerViewController];
+        self.playerViewController = loadedPlayerViewController;
+        NSString *newVideoID = loadedPlayerViewController.contentVideoID;
         BOOL alreadyDownloaded = [self.downloadedVideoIDs containsObject:newVideoID];
         BOOL shouldContinue = [self shouldContinueDownloadingCurrentTrack];
 
@@ -196,7 +210,7 @@
 
 - (void)performNavigationToNextTrack {
     dispatch_async(dispatch_get_main_queue(), ^{
-        if (!self.nowPlayingController || !self.playerViewController) {
+        if (!self.nowPlayingController || ![self activePlayerViewController]) {
             return;
         }
 
@@ -242,13 +256,18 @@
 }
 
 - (BOOL)shouldContinueDownloadingCurrentTrack {
+    YTPlayerViewController *currentPlayerViewController = [self activePlayerViewController];
+    if (!currentPlayerViewController) {
+        return NO;
+    }
+
     if (self.explicitAlbumTitle.length > 0) {
-        NSString *currentAlbumTitle = [self explicitAlbumTitleForPlayerViewController:self.playerViewController];
+        NSString *currentAlbumTitle = [self explicitAlbumTitleForPlayerViewController:currentPlayerViewController];
         return [[self normalizedString:currentAlbumTitle] isEqualToString:[self normalizedString:self.explicitAlbumTitle]];
     }
 
     if (self.explicitQueueTitle.length > 0) {
-        NSString *currentQueueTitle = [self explicitQueueTitleForPlayerViewController:self.playerViewController];
+        NSString *currentQueueTitle = [self explicitQueueTitleForPlayerViewController:currentPlayerViewController];
         return [[self normalizedString:currentQueueTitle] isEqualToString:[self normalizedString:self.explicitQueueTitle]];
     }
 
@@ -347,8 +366,21 @@
     return nil;
 }
 
-- (BOOL)isTrackReadyForDownload {
-    YTPlayerResponse *playerResponse = self.playerViewController.playerResponse;
+- (YTPlayerViewController *)activePlayerViewController {
+    YTMWatchViewController *watchViewController = self.nowPlayingController.parentViewController;
+    if ([watchViewController isKindOfClass:[YTMWatchViewController class]] && watchViewController.playerViewController) {
+        return watchViewController.playerViewController;
+    }
+
+    return self.playerViewController;
+}
+
+- (BOOL)isTrackReadyForDownloadForPlayerViewController:(YTPlayerViewController *)playerViewController {
+    if (!playerViewController) {
+        return NO;
+    }
+
+    YTPlayerResponse *playerResponse = playerViewController.playerResponse;
     NSString *title = playerResponse.playerData.videoDetails.title;
     NSString *author = playerResponse.playerData.videoDetails.author;
     NSString *manifestURL = playerResponse.playerData.streamingData.hlsManifestURL;
@@ -359,17 +391,32 @@
             manifestURL.length > 0);
 }
 
-- (BOOL)currentTrackHasStartedPlaybackForAttempt:(NSInteger)attempt {
-    CGFloat currentMediaTime = [self.playerViewController currentVideoMediaTime];
-    if (isfinite(currentMediaTime) && currentMediaTime > 0.15) {
+- (BOOL)currentTrackHasStartedPlaybackForPlayerViewController:(YTPlayerViewController *)playerViewController
+                                                      attempt:(NSInteger)attempt {
+    if (!playerViewController) {
+        return NO;
+    }
+
+    CGFloat currentMediaTime = [playerViewController currentVideoMediaTime];
+    if (isfinite(currentMediaTime) && currentMediaTime > 0.9) {
         return YES;
     }
 
-    return attempt >= 4;
+    return attempt >= 10;
+}
+
+- (BOOL)currentTrackHasResolvedDurationForPlayerViewController:(YTPlayerViewController *)playerViewController {
+    if (!playerViewController) {
+        return NO;
+    }
+
+    CGFloat totalMediaTime = playerViewController.currentVideoTotalMediaTime;
+    return isfinite(totalMediaTime) && totalMediaTime > 1.0;
 }
 
 - (void)waitForTrackReadinessFromVideoID:(NSString *)videoID
                                  attempt:(NSInteger)attempt
+                          readyPassCount:(NSInteger)readyPassCount
                               completion:(void (^)(BOOL changed))completion {
     if (!self.isDownloadingAlbum) {
         if (completion) {
@@ -386,28 +433,50 @@
     }
 
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        NSString *currentVideoID = self.playerViewController.contentVideoID;
+        YTPlayerViewController *currentPlayerViewController = [self activePlayerViewController];
+        self.playerViewController = currentPlayerViewController;
+        NSString *currentVideoID = currentPlayerViewController.contentVideoID;
         BOOL didTrackChange = (currentVideoID.length > 0 && ![currentVideoID isEqualToString:videoID]);
+        BOOL readyForDownload = (didTrackChange &&
+                                 [self isTrackReadyForDownloadForPlayerViewController:currentPlayerViewController] &&
+                                 [self currentTrackHasResolvedDurationForPlayerViewController:currentPlayerViewController] &&
+                                 [self currentTrackHasStartedPlaybackForPlayerViewController:currentPlayerViewController attempt:attempt]);
+        NSInteger nextReadyPassCount = readyForDownload ? readyPassCount + 1 : 0;
 
-        if (didTrackChange &&
-            [self isTrackReadyForDownload] &&
-            [self currentTrackHasStartedPlaybackForAttempt:attempt]) {
+        if (nextReadyPassCount >= 3) {
             if (completion) {
                 completion(YES);
             }
             return;
         }
 
-        [self waitForTrackReadinessFromVideoID:videoID attempt:attempt + 1 completion:completion];
+        [self waitForTrackReadinessFromVideoID:videoID
+                                       attempt:attempt + 1
+                               readyPassCount:nextReadyPassCount
+                                    completion:completion];
     });
 }
 
-- (void)scheduleContinuation:(dispatch_block_t)continuation {
+- (void)scheduleAfterDownloadCompletion:(dispatch_block_t)continuation {
     if (!continuation) {
         return;
     }
 
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.9 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        if (!self.isDownloadingAlbum) {
+            return;
+        }
+
+        continuation();
+    });
+}
+
+- (void)scheduleBeforeDownloadingLoadedTrack:(dispatch_block_t)continuation {
+    if (!continuation) {
+        return;
+    }
+
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.65 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
         if (!self.isDownloadingAlbum) {
             return;
         }

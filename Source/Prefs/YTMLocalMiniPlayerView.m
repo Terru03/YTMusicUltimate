@@ -8,6 +8,9 @@
 @property (nonatomic, strong) UILabel *subtitleLabel;
 @property (nonatomic, strong) UIButton *playPauseButton;
 @property (nonatomic, strong) UIButton *nextButton;
+@property (nonatomic) NSInteger displayedTrackIndex;
+@property (nonatomic) NSInteger pendingTrackAnimationDirection;
+@property (nonatomic) BOOL animatingTrackTransition;
 @end
 
 @implementation YTMLocalMiniPlayerView
@@ -25,6 +28,7 @@
     self = [super initWithFrame:frame];
     if (self) {
         self.hidden = YES;
+        self.displayedTrackIndex = NSNotFound;
         self.layer.cornerRadius = 18.0;
         self.layer.masksToBounds = YES;
         self.backgroundColor = [UIColor clearColor];
@@ -156,19 +160,104 @@
         }
 
         self.hidden = NO;
-        self.titleLabel.text = [self preferredTitleForTrack:track];
-        self.subtitleLabel.text = [self preferredSubtitleForTrack:track];
-        self.artworkView.image = [self artworkImageForTrack:track] ?: [self placeholderArtworkImage];
+        if (manager.currentIndex != self.displayedTrackIndex && !self.hidden && self.window && !self.animatingTrackTransition) {
+            [self animateTrackTransitionToTrack:track manager:manager];
+            return;
+        }
 
-        NSString *playPauseSystemName = manager.isPlaying ? @"pause.fill" : @"play.fill";
-        UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:17.0 weight:UIImageSymbolWeightSemibold];
-        UIImage *playPauseImage = [[UIImage systemImageNamed:playPauseSystemName] imageWithConfiguration:configuration];
-        [self.playPauseButton setImage:playPauseImage forState:UIControlStateNormal];
-
-        BOOL canGoNext = manager.tracks.count > 0;
-        self.nextButton.enabled = canGoNext;
-        self.nextButton.alpha = canGoNext ? 1.0 : 0.45;
+        [self applyTrack:track manager:manager];
     });
+}
+
+- (void)applyTrack:(NSDictionary *)track manager:(YTMLocalPlaybackManager *)manager {
+    if (!track) {
+        return;
+    }
+
+    self.hidden = NO;
+    self.displayedTrackIndex = manager.currentIndex;
+    self.titleLabel.text = [self preferredTitleForTrack:track];
+    self.subtitleLabel.text = [self preferredSubtitleForTrack:track];
+    self.artworkView.image = [self artworkImageForTrack:track] ?: [self placeholderArtworkImage];
+
+    NSString *playPauseSystemName = manager.isPlaying ? @"pause.fill" : @"play.fill";
+    UIImageSymbolConfiguration *configuration = [UIImageSymbolConfiguration configurationWithPointSize:17.0 weight:UIImageSymbolWeightSemibold];
+    UIImage *playPauseImage = [[UIImage systemImageNamed:playPauseSystemName] imageWithConfiguration:configuration];
+    [self.playPauseButton setImage:playPauseImage forState:UIControlStateNormal];
+
+    BOOL canGoNext = manager.tracks.count > 0;
+    self.nextButton.enabled = canGoNext;
+    self.nextButton.alpha = canGoNext ? 1.0 : 0.45;
+}
+
+- (NSArray<UIView *> *)trackTransitionViews {
+    return @[self.artworkView, self.titleLabel, self.subtitleLabel];
+}
+
+- (NSInteger)resolvedAnimationDirectionFromIndex:(NSInteger)previousIndex
+                                         toIndex:(NSInteger)newIndex
+                                       trackCount:(NSInteger)trackCount {
+    if (self.pendingTrackAnimationDirection != 0) {
+        NSInteger direction = self.pendingTrackAnimationDirection;
+        self.pendingTrackAnimationDirection = 0;
+        return direction;
+    }
+
+    if (previousIndex == NSNotFound || newIndex == NSNotFound || trackCount <= 1) {
+        return 0;
+    }
+
+    if (((previousIndex + 1) % trackCount) == newIndex) {
+        return 1;
+    }
+
+    if (((previousIndex - 1 + trackCount) % trackCount) == newIndex) {
+        return -1;
+    }
+
+    return newIndex > previousIndex ? 1 : -1;
+}
+
+- (void)animateTrackTransitionToTrack:(NSDictionary *)track manager:(YTMLocalPlaybackManager *)manager {
+    NSInteger direction = [self resolvedAnimationDirectionFromIndex:self.displayedTrackIndex toIndex:manager.currentIndex trackCount:manager.tracks.count];
+    if (direction == 0 || !track) {
+        [self applyTrack:track manager:manager];
+        return;
+    }
+
+    self.animatingTrackTransition = YES;
+    NSArray<UIView *> *transitionViews = [self trackTransitionViews];
+    CGFloat offset = 42.0;
+    CGFloat outgoingOffset = direction > 0 ? -offset : offset;
+    CGFloat incomingOffset = -outgoingOffset;
+
+    [UIView animateWithDuration:0.15 delay:0.0 options:UIViewAnimationOptionCurveEaseIn animations:^{
+        for (UIView *view in transitionViews) {
+            view.transform = CGAffineTransformMakeTranslation(outgoingOffset, 0.0);
+            view.alpha = 0.0;
+        }
+    } completion:^(__unused BOOL finished) {
+        [self applyTrack:track manager:manager];
+
+        for (UIView *view in transitionViews) {
+            view.transform = CGAffineTransformMakeTranslation(incomingOffset, 0.0);
+            view.alpha = 0.0;
+        }
+
+        [UIView animateWithDuration:0.22
+                              delay:0.0
+             usingSpringWithDamping:0.9
+              initialSpringVelocity:0.2
+                            options:UIViewAnimationOptionCurveEaseOut
+                         animations:^{
+            for (UIView *view in transitionViews) {
+                view.transform = CGAffineTransformIdentity;
+                view.alpha = 1.0;
+            }
+        } completion:^(__unused BOOL innerFinished) {
+            self.animatingTrackTransition = NO;
+        }];
+    }];
 }
 
 - (void)handlePlaybackStateDidChange:(NSNotification *)notification {
@@ -188,6 +277,7 @@
 }
 
 - (void)didTapNext {
+    self.pendingTrackAnimationDirection = 1;
     [[YTMLocalPlaybackManager sharedInstance] playNextTrack];
 }
 
@@ -196,10 +286,14 @@
 }
 
 - (void)didSwipeToNext {
+    self.pendingTrackAnimationDirection = 1;
     [[YTMLocalPlaybackManager sharedInstance] playNextTrack];
 }
 
 - (void)didSwipeToPrevious {
+    YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
+    NSTimeInterval currentTime = [manager currentTime];
+    self.pendingTrackAnimationDirection = (currentTime > 3.0 || manager.currentIndex == 0 || manager.currentIndex == NSNotFound) ? 0 : -1;
     [[YTMLocalPlaybackManager sharedInstance] playPreviousTrackOrRestart];
 }
 
