@@ -2,7 +2,6 @@
 #import "Headers/Localization.h"
 #import "Headers/YTMNowPlayingViewController.h"
 #import "Headers/YTMToastController.h"
-#import "Headers/YTMWatchViewController.h"
 #import "Headers/YTPlayerResponse.h"
 #import "Headers/YTPlayerViewController.h"
 #import "Headers/YTIPlayerResponse.h"
@@ -367,9 +366,15 @@
 }
 
 - (YTPlayerViewController *)activePlayerViewController {
-    YTMWatchViewController *watchViewController = self.nowPlayingController.parentViewController;
-    if ([watchViewController isKindOfClass:[YTMWatchViewController class]] && watchViewController.playerViewController) {
-        return watchViewController.playerViewController;
+    id watchViewController = self.nowPlayingController.parentViewController;
+    if (watchViewController && [watchViewController respondsToSelector:@selector(playerViewController)]) {
+        @try {
+            id resolvedPlayerViewController = [watchViewController valueForKey:@"playerViewController"];
+            if ([resolvedPlayerViewController isKindOfClass:[YTPlayerViewController class]]) {
+                return resolvedPlayerViewController;
+            }
+        } @catch (__unused NSException *exception) {
+        }
     }
 
     return self.playerViewController;
