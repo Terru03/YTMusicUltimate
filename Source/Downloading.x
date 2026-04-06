@@ -12,6 +12,8 @@
 #import "Headers/YTIFormatStream.h"
 #import "Headers/YTAlertView.h"
 #import "Headers/ELMNodeController.h"
+#import "Prefs/YTMDownloadStore.h"
+#import "YTMBatchDownloadManager.h"
 
 static BOOL YTMU(NSString *key) {
     NSDictionary *YTMUltimateDict = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"YTMUltimate"];
@@ -24,9 +26,46 @@ static BOOL YTMU(NSString *key) {
 
 @interface ELMTouchCommandPropertiesHandler : NSObject
 - (void)downloadAudio:(YTPlayerViewController *)playerResponse;
+- (void)downloadAudio:(YTPlayerViewController *)playerResponse completion:(YTMTrackDownloadCompletion)completion;
+- (void)downloadAudio:(YTPlayerViewController *)playerResponse collectionInfo:(NSDictionary *)collectionInfo completion:(YTMTrackDownloadCompletion)completion;
 - (void)downloadCoverImage:(YTPlayerViewController *)playerResponse;
 - (NSString *)getURLFromManifest:(NSURL *)manifest;
 @end
+
+static NSString *YTMUSanitizedMediaComponent(NSString *value) {
+    NSString *sanitizedValue = [value stringByReplacingOccurrencesOfString:@"/" withString:@""];
+    sanitizedValue = [sanitizedValue stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+
+    return sanitizedValue.length > 0 ? sanitizedValue : @"Unknown";
+}
+
+static void YTMUSaveCoverForPlayerResponse(YTPlayerResponse *playerResponse, NSString *author, NSString *title) {
+    NSMutableArray *thumbnailsArray = playerResponse.playerData.videoDetails.thumbnail.thumbnailsArray;
+    YTIThumbnailDetails_Thumbnail *thumbnail = [thumbnailsArray lastObject];
+    NSData *imageData = [NSData dataWithContentsOfURL:[NSURL URLWithString:thumbnail.URL]];
+
+    if (imageData) {
+        NSURL *documentsURL = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject];
+        NSURL *coverURL = [documentsURL URLByAppendingPathComponent:[NSString stringWithFormat:@"YTMusicUltimate/%@ - %@.png", author, title]];
+        [imageData writeToURL:coverURL atomically:YES];
+    }
+}
+
+static NSDictionary *YTMUMetadataForDownloadedTrack(NSString *author, NSString *title, NSDictionary *collectionInfo) {
+    NSMutableDictionary *metadata = [@{
+        @"displayName": [NSString stringWithFormat:@"%@ - %@", author, title],
+        @"artist": author ?: @"",
+        @"title": title ?: @"",
+        @"coverFileName": [NSString stringWithFormat:@"%@ - %@.png", author, title],
+        @"createdAt": [NSDate date]
+    } mutableCopy];
+
+    if (collectionInfo.count > 0) {
+        [metadata addEntriesFromDictionary:collectionInfo];
+    }
+
+    return metadata;
+}
 
 %hook ELMTouchCommandPropertiesHandler
 - (void)handleTap {
@@ -61,22 +100,30 @@ static BOOL YTMU(NSString *key) {
         sheetController.sourceView = tapRecognizer.view;
         [sheetController addHeaderWithTitle:LOC(@"SELECT_ACTION") subtitle:nil];
 
-        [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_AUDIO") iconImage:[%c(YTUIResources) audioOutline] style:0 handler:^ {
-            [self downloadAudio:playerVC];
-        }]];
+        if (YTMU(@"downloadAudio")) {
+            [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_AUDIO") iconImage:[%c(YTUIResources) audioOutline] style:0 handler:^ {
+                [self downloadAudio:playerVC];
+            }]];
 
-        [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_COVER") iconImage:[%c(YTUIResources) outlineImageWithColor:[UIColor whiteColor]] style:0 handler:^ {
-            [self downloadCoverImage:playerVC];
-        }]];
+            [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:@"Download album" iconImage:[%c(YTUIResources) downloadOutline] style:0 handler:^ {
+                [[YTMBatchDownloadManager sharedInstance] downloadAlbumFromNowPlayingController:playingVC playerViewController:playerVC trackDownloader:^(YTPlayerViewController *currentPlayerVC, NSDictionary *collectionInfo, YTMTrackDownloadCompletion completion) {
+                    [self downloadAudio:currentPlayerVC collectionInfo:collectionInfo completion:completion];
+                }];
+            }]];
+        }
+
+        if (YTMU(@"downloadCoverImage")) {
+            [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_COVER") iconImage:[%c(YTUIResources) outlineImageWithColor:[UIColor whiteColor]] style:0 handler:^ {
+                [self downloadCoverImage:playerVC];
+            }]];
+        }
 
         [sheetController addAction:[%c(YTActionSheetAction) actionWithTitle:LOC(@"DOWNLOAD_PREMIUM") iconImage:[%c(YTUIResources) downloadOutline] secondaryIconImage:[%c(YTUIResources) youtubePremiumBadgeLight] accessibilityIdentifier:nil handler:^ {
             return %orig;
         }]];
 
-        if (YTMU(@"downloadAudio") && YTMU(@"downloadCoverImage")) {
+        if (YTMU(@"downloadAudio")) {
             [sheetController presentFromViewController:playingVC animated:YES completion:nil];
-        } else if (YTMU(@"downloadAudio")) {
-            [self downloadAudio:playerVC];
         } else if (YTMU(@"downloadCoverImage")) {
             [self downloadCoverImage:playerVC];
         }
@@ -90,37 +137,58 @@ static BOOL YTMU(NSString *key) {
 
 %new
 - (void)downloadAudio:(YTPlayerViewController *)playerVC {
+    [self downloadAudio:playerVC collectionInfo:nil completion:nil];
+}
+
+%new
+- (void)downloadAudio:(YTPlayerViewController *)playerVC completion:(YTMTrackDownloadCompletion)completion {
+    [self downloadAudio:playerVC collectionInfo:nil completion:completion];
+}
+
+%new
+- (void)downloadAudio:(YTPlayerViewController *)playerVC collectionInfo:(NSDictionary *)collectionInfo completion:(YTMTrackDownloadCompletion)completion {
     YTPlayerResponse *playerResponse = playerVC.playerResponse;
 
-    NSString *title = [playerResponse.playerData.videoDetails.title stringByReplacingOccurrencesOfString:@"/" withString:@""];
-    NSString *author = [playerResponse.playerData.videoDetails.author stringByReplacingOccurrencesOfString:@"/" withString:@""];
+    if (!playerResponse) {
+        if (completion) {
+            completion(NO, NO);
+        }
+        return;
+    }
+
+    NSString *title = YTMUSanitizedMediaComponent(playerResponse.playerData.videoDetails.title);
+    NSString *author = YTMUSanitizedMediaComponent(playerResponse.playerData.videoDetails.author);
     NSString *urlStr = playerResponse.playerData.streamingData.hlsManifestURL;
 
     FFMpegDownloader *ffmpeg = [[FFMpegDownloader alloc] init];
-    ffmpeg.tempName = playerVC.contentVideoID;
+    ffmpeg.tempName = playerVC.contentVideoID ?: [NSUUID UUID].UUIDString;
     ffmpeg.mediaName = [NSString stringWithFormat:@"%@ - %@", author, title];
-    ffmpeg.duration = round(playerVC.currentVideoTotalMediaTime);
+    ffmpeg.duration = MAX(1, round(playerVC.currentVideoTotalMediaTime));
 
     
     NSString *extractedURL = [self getURLFromManifest:[NSURL URLWithString:urlStr]];
     
     if (extractedURL.length > 0) {
+        ffmpeg.completion = ^(YTMFFMpegDownloadResult result) {
+            if (result == YTMFFMpegDownloadResultSuccess) {
+                YTMUSaveCoverForPlayerResponse(playerResponse, author, title);
+                [YTMDownloadStore saveMetadata:YTMUMetadataForDownloadedTrack(author, title, collectionInfo) forAudioFileNamed:[NSString stringWithFormat:@"%@.m4a", ffmpeg.mediaName]];
+            }
+
+            if (completion) {
+                completion(result == YTMFFMpegDownloadResultSuccess, result == YTMFFMpegDownloadResultCancelled);
+            }
+        };
         [ffmpeg downloadAudio:extractedURL];
-
-        NSMutableArray *thumbnailsArray = playerResponse.playerData.videoDetails.thumbnail.thumbnailsArray;
-        YTIThumbnailDetails_Thumbnail *thumbnail = [thumbnailsArray lastObject];
-        NSData *imageData = [NSData dataWithContentsOfURL:[NSURL URLWithString:thumbnail.URL]];
-
-        if (imageData) {
-            NSURL *documentsURL = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask] lastObject];
-            NSURL *coverURL = [documentsURL URLByAppendingPathComponent:[NSString stringWithFormat:@"YTMusicUltimate/%@ - %@.png", author, title]];
-            [imageData writeToURL:coverURL atomically:YES];
-        }
     } else {
         YTAlertView *alertView = [%c(YTAlertView) infoDialog];
         alertView.title = LOC(@"OOPS");
         alertView.subtitle = LOC(@"LINK_NOT_FOUND");
         [alertView show];
+
+        if (completion) {
+            completion(NO, NO);
+        }
     }
 }
 

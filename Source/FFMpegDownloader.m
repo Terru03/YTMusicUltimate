@@ -37,7 +37,10 @@
         dispatch_async(dispatch_get_main_queue(), ^{
             if (returnCode == RETURN_CODE_SUCCESS) {
                 [self.hud hideAnimated:YES];
-                BOOL isMoved = [[NSFileManager defaultManager] moveItemAtURL:destinationURL toURL:outputURL error:nil];
+                [[NSFileManager defaultManager] removeItemAtURL:outputURL error:nil];
+
+                NSError *moveError = nil;
+                BOOL isMoved = [[NSFileManager defaultManager] moveItemAtURL:destinationURL toURL:outputURL error:&moveError];
 
                 if (isMoved) {
                     [[NSNotificationCenter defaultCenter] postNotificationName:@"ReloadDataNotification" object:nil];
@@ -51,11 +54,37 @@
                     self.hud.customView = checkmarkImageView;
 
                     [self.hud hideAnimated:YES afterDelay:3.0];
+
+                    if (self.completion) {
+                        self.completion(YTMFFMpegDownloadResultSuccess);
+                    }
+                } else {
+                    self.hud = [MBProgressHUD showHUDAddedTo:[UIApplication sharedApplication].keyWindow animated:YES];
+                    self.hud.mode = MBProgressHUDModeCustomView;
+                    self.hud.label.text = LOC(@"OOPS");
+                    self.hud.label.numberOfLines = 0;
+
+                    UIImageView *checkmarkImageView = [[UIImageView alloc] initWithImage:[self imageWithSystemIconNamed:@"xmark"]];
+                    checkmarkImageView.contentMode = UIViewContentModeScaleAspectFit;
+                    self.hud.customView = checkmarkImageView;
+
+                    [self.hud hideAnimated:YES afterDelay:3.0];
+                    [UIPasteboard generalPasteboard].string = [NSString stringWithFormat:@"File move failed: %@\n", moveError.localizedDescription ?: @"unknown error"];
+
+                    [[NSFileManager defaultManager] removeItemAtURL:destinationURL error:nil];
+
+                    if (self.completion) {
+                        self.completion(YTMFFMpegDownloadResultFailed);
+                    }
                 }
             } else if (returnCode == RETURN_CODE_CANCEL) {
                 [self.hud hideAnimated:YES];
 
                 [[NSFileManager defaultManager] removeItemAtURL:destinationURL error:nil];
+
+                if (self.completion) {
+                    self.completion(YTMFFMpegDownloadResultCancelled);
+                }
             } else {
                 if (self.hud && self.hud.mode == MBProgressHUDModeAnnularDeterminate) {
                     self.hud.mode = MBProgressHUDModeCustomView;
@@ -71,6 +100,10 @@
                 }
 
                 [[NSFileManager defaultManager] removeItemAtURL:destinationURL error:nil];
+
+                if (self.completion) {
+                    self.completion(YTMFFMpegDownloadResultFailed);
+                }
             }
         });
     });

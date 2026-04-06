@@ -7,11 +7,18 @@
 #import "Utils/MBProgressHUD/MBProgressHUD.h"
 #import "Headers/Localization.h"
 
+typedef NS_ENUM(NSInteger, YTMFFMpegDownloadResult) {
+    YTMFFMpegDownloadResultSuccess = 0,
+    YTMFFMpegDownloadResultCancelled,
+    YTMFFMpegDownloadResultFailed
+};
+
 @interface FFMpegDownloader : NSObject <LogDelegate, StatisticsDelegate>
 @property (nonatomic, strong) MBProgressHUD *hud;
 @property (nonatomic, strong) NSString *tempName;
 @property (nonatomic, strong) NSString *mediaName;
 @property (nonatomic) NSInteger duration;
+@property (nonatomic, copy) void (^completion)(YTMFFMpegDownloadResult result);
 - (void)downloadAudio:(NSString *)audioURL;
 - (void)downloadImage:(NSURL *)link;
 - (void)shareMedia:(NSURL *)mediaURL;

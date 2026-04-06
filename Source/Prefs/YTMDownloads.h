@@ -6,8 +6,10 @@
 #import "../Headers/Localization.h"
 
 @interface YTMDownloads : UIViewController <UITableViewDelegate, UITableViewDataSource> 
-@property (nonatomic, strong) UITableView* tableView;
-@property (nonatomic, strong) NSMutableArray *audioFiles;
+@property (nonatomic, strong) UITableView *tableView;
+@property (nonatomic, strong) UISegmentedControl *segmentedControl;
+@property (nonatomic, strong) NSMutableArray<NSMutableDictionary *> *tracks;
+@property (nonatomic, strong) NSMutableArray<NSMutableDictionary *> *collections;
 @property (nonatomic, strong) UIImageView *imageView;
 @property (nonatomic, strong) UILabel *label;
 @end
