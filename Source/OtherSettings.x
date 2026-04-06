@@ -3,6 +3,7 @@
 #import "Headers/YTMWatchViewController.h"
 #import "Headers/YTPivotBarViewController.h"
 #import "Headers/YTPlayabilityResolutionUserActionUIController.h"
+#import "Prefs/YTMLocalPlaybackManager.h"
 
 @interface YTPlayabilityResolutionUserActionUIControllerImpl : NSObject
 - (void)confirmAlertDidPressConfirm;
@@ -11,6 +12,21 @@
 static BOOL YTMU(NSString *key) {
     NSDictionary *YTMUltimateDict = [[NSUserDefaults standardUserDefaults] dictionaryForKey:@"YTMUltimate"];
     return [YTMUltimateDict[key] boolValue];
+}
+
+static void YTMUStopLocalPlaybackForNativePlayerIfNeeded(YTMWatchViewController *watchViewController) {
+    YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
+    if (![manager hasActiveSession] || !watchViewController.view.window) {
+        return;
+    }
+
+    YTPlayerViewController *playerViewController = watchViewController.playerViewController;
+    NSString *videoID = playerViewController.contentVideoID ?: [playerViewController currentVideoID];
+    if (videoID.length == 0 || !playerViewController.playerResponse) {
+        return;
+    }
+
+    [manager stopAndClearSession];
 }
 
 // Headers stuff
@@ -109,6 +125,7 @@ BOOL isTabSelected = NO;
     }
     // Disable auto-pause when player minimized to miniplayer
     [self setValue:@(NO) forKey:@"_pauseOnMinimize"];
+    YTMUStopLocalPlaybackForNativePlayerIfNeeded(self);
 }
 %end
 

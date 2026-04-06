@@ -14,7 +14,14 @@ static void YTMUStopLocalPlaybackIfNeeded(void) {
 }
 
 - (void)setHidden:(BOOL)hidden {
-    %orig([[YTMLocalPlaybackManager sharedInstance] hasActiveSession] ? YES : hidden);
+    YTMLocalPlaybackManager *manager = [YTMLocalPlaybackManager sharedInstance];
+    if ([manager hasActiveSession] && !hidden) {
+        [manager stopAndClearSession];
+        %orig(NO);
+        return;
+    }
+
+    %orig([manager hasActiveSession] ? YES : hidden);
 }
 %end
 
